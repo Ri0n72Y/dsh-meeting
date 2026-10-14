@@ -20,6 +20,9 @@ export interface MeetingSnapshot {
 }
 
 /** Session IDs are opaque DSH strings, never trusted as filesystem segments. */
+export function workspaceMeetingRoot(sessionCwd: string | undefined, hostCwd = process.cwd()): string {
+  return join(sessionCwd ?? hostCwd, '.dsh-meeting')
+}
 export function sessionDirectoryName(id: string): string {
   if (typeof id !== 'string') throw new Error('Invalid DSH Session id')
   return createHash('sha256').update(id).digest('hex')

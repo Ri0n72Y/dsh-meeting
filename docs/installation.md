@@ -7,16 +7,16 @@ Target: DeepSeek Harness `0.2.0-rc.2`. Each capability declares its own `dsh.bun
 Initialize a new Web-based profile to supply the DSH Session, Tools and Web services:
 
 ```sh
-pnpm dsh --profile meeting --from-default-profile web --dump-default-config
+pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 --profile meeting --from-default-profile web --dump-default-config
 ```
 
 Then add only the capabilities needed, in dependency order:
 
 ```sh
-pnpm dsh plugin --profile meeting add ./packages/meeting-context
-pnpm dsh plugin --profile meeting add ./packages/meeting-speaker
-pnpm dsh plugin --profile meeting add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
-pnpm dsh plugin --profile meeting add ./packages/meeting-capture
+pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-context
+pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-speaker
+pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
+pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-capture
 ```
 
 - **Context** works with Tools + Sessions and has no recording dependency.
@@ -27,7 +27,7 @@ pnpm dsh plugin --profile meeting add ./packages/meeting-capture
 Verify configuration composition (this check does not require a microphone or model):
 
 ```sh
-pnpm dsh --profile meeting --dump-config
+pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 --profile meeting --dump-config
 ```
 
 The printed configuration must include `meeting-context`, `meeting-speaker`, `speech-to-text`, `speech-to-text-sensevoice`, and `meeting-capture`. Do not confuse bundle registration with an end-to-end working microphone; browser→Host transport is a later milestone.

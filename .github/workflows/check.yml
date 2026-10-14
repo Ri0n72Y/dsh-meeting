@@ -23,3 +23,18 @@ jobs:
       - name: Typecheck with generated dist present
         run: pnpm run typecheck
       - run: pnpm proof
+      - name: Verify independent DSH profile bundles without loading models
+        env:
+          DSH_HOME: ${{ runner.temp }}/dsh-meeting-profile
+        run: |
+          set -euo pipefail
+          cli=(pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2)
+          "${cli[@]}" --profile meeting-ci --from-default-profile web --dump-default-config
+          "${cli[@]}" plugin --profile meeting-ci add ./packages/meeting-context
+          "${cli[@]}" plugin --profile meeting-ci add ./packages/meeting-speaker
+          "${cli[@]}" plugin --profile meeting-ci add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
+          "${cli[@]}" plugin --profile meeting-ci add ./packages/meeting-capture
+          "${cli[@]}" --profile meeting-ci --dump-config > "$RUNNER_TEMP/meeting-composed.yml"
+          for id in meeting-context meeting-speaker meeting-capture speech-to-text speech-to-text-sensevoice; do
+            grep -Fq "id: $id" "$RUNNER_TEMP/meeting-composed.yml"
+          done

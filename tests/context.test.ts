@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MeetingStore, sessionDirectoryName } from '../packages/meeting-context/src/store.js'
+import { MeetingStore, sessionDirectoryName, workspaceMeetingRoot } from '../packages/meeting-context/src/store.js'
 
 test('Session-scoped journal survives service recreation and remains isolated', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'dsh-meeting-'))
@@ -63,4 +63,10 @@ test('opaque Session IDs are safe and meeting audio is ignored by workspace Git'
     assert.equal(await readFile(join(root, '.gitignore'), 'utf8'), '*\n!/.gitignore\n')
     assert.match(store.directory('team:demo/meeting.1'), /[a-f0-9]{64}$/)
   } finally { await rm(cwd, { recursive: true, force: true }) }
+})
+
+test('DSH Session without cwd uses the Host workspace, never DSH_HOME', async () => {
+  const host = join(tmpdir(), 'host-session-root')
+  assert.equal(workspaceMeetingRoot(undefined, host), join(host, '.dsh-meeting'))
+  assert.equal(workspaceMeetingRoot(join(host, 'project'), host), join(host, 'project', '.dsh-meeting'))
 })

@@ -1,8 +1,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { join } from 'node:path'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { MeetingStore, sessionDirectoryName } from './store.js'
+import { MeetingStore, sessionDirectoryName, workspaceMeetingRoot } from './store.js'
 export type { MeetingLine, MeetingSnapshot } from './store.js'
 export { MeetingStore } from './store.js'
 
@@ -44,7 +43,7 @@ export default class MeetingContext extends Service {
     if (!store) {
       // DSH SessionHeader.cwd is optional. Its absent-workspace fallback is the
       // current Host workspace (also the DSH shell's process default).
-      store = new MeetingStore(join(session.header.cwd ?? process.cwd(), '.dsh-meeting'))
+      store = new MeetingStore(workspaceMeetingRoot(session.header.cwd))
       this.stores.set(sessionId, store)
     }
     return store
