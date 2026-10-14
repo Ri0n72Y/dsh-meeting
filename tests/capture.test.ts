@@ -18,13 +18,27 @@ test('continuous PCM produces timed transcripts, silent windows and entire final
   await capture.push(voiced(1))
   await capture.push(new Float32Array(Math.round(SAMPLE_RATE * 0.1)).fill(0.2))
   const result = await capture.stop()
-  assert.equal(result.captured, 4)
-  assert.equal(result.silent, 2) // Entire 100ms tail saved but too short for ASR.
+  assert.equal(result.captured, 3)
+  assert.equal(result.silent, 1)
   assert.equal(result.interrupted, false)
   assert.deepEqual(result.lines.map(line => [line.startMs, line.endMs]), [[0, 5000], [10000, 11100]])
   assert.deepEqual(saved.map(x => [x.start, x.end, x.frames]), [
     [0, 5000, 80000], [5000, 10000, 80000], [10000, 11100, 17600],
   ])
+})
+
+test('final 100ms alone is persisted even when too short for ASR', async () => {
+  const saved: number[] = []
+  const capture = new ContinuousCapture({
+    async persist(wav) { saved.push(decodeWav(wav).length) },
+    async process() { throw new Error('short tail must not be transcribed') },
+  })
+  await capture.push(new Float32Array(1600).fill(0.3))
+  const result = await capture.stop()
+  assert.deepEqual(saved, [1600])
+  assert.equal(result.captured, 1)
+  assert.equal(result.silent, 1)
+  assert.equal(result.processed, 0)
 })
 
 test('failed ASR preserves audio and subsequent windows', async () => {

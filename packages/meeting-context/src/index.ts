@@ -1,7 +1,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { join } from 'node:path'
-import type {} from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { MeetingStore, validSessionId } from './store.js'
 export type { MeetingLine, MeetingSnapshot } from './store.js'
 export { MeetingStore } from './store.js'
@@ -38,7 +38,7 @@ export default class MeetingContext extends Service {
   }
   storeFor(sessionId: string): MeetingStore {
     validSessionId(sessionId)
-    const session = this.ctx.sessions.get(sessionId)
+    const session = this.ctx.sessions.get(sessionId as SessionId)
     if (!session?.header.cwd) throw new Error('Meeting requires a live DSH Session workspace')
     let store = this.stores.get(sessionId)
     if (!store) {
