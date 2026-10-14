@@ -15,12 +15,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: pnpm install --no-frozen-lockfile
-      - name: Emit resolved lockfile for commit (temporary)
-        run: |
-          echo '__MEETING_LOCK_BEGIN__'
-          cat pnpm-lock.yaml
-          echo '__MEETING_LOCK_END__'
+      - run: pnpm install --frozen-lockfile
       - name: Source typecheck without generated dist
         run: pnpm run typecheck
       - run: pnpm test

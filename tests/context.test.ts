@@ -60,7 +60,7 @@ test('opaque Session IDs are safe and meeting audio is ignored by workspace Git'
     await store.begin('team:demo/meeting.1')
     assert.equal((await store.read('team:demo/meeting.1'))?.sessionId, 'team:demo/meeting.1')
     assert.equal((await store.read('team:demo/meeting.2')), null)
-    assert.equal(await readFile(join(root, '.gitignore'), 'utf8'), '*\\n!/.gitignore\\n')
+    assert.equal(await readFile(join(root, '.gitignore'), 'utf8'), '*\n!/.gitignore\n')
     assert.match(store.directory('team:demo/meeting.1'), /[a-f0-9]{64}$/)
   } finally { await rm(cwd, { recursive: true, force: true }) }
 })

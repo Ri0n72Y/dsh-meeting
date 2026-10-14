@@ -4,7 +4,7 @@ Baseline: DSH `dsh-v0.2.0-rc.2`. This iteration **assumes**, rather than validat
 
 ## C1 — Meeting Context
 - One meeting per real DSH Session id; no parallel meeting identifier.
-- `begin`, `resume`, `interrupt`, `append`, `finish`, `read` on a persistent, Session-keyed store under `<Session.cwd>/.dsh-meeting/<sessionId>/`.
+- `begin`, `resume`, `interrupt`, `append`, `finish`, `read` on a persistent, Session-keyed store under `<Session Workspace>/.dsh-meeting/<sha256(sessionId)>/`.
 - Tool `meeting_status` is visible in the Agent conversation.
 - `state.json` is temporary internal storage; Markdown format is deferred.
 
