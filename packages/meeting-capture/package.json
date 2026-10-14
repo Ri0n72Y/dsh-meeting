@@ -36,8 +36,5 @@
     "@ri0n72y/dsh-meeting-speaker": {
       "optional": true
     }
-  },
-  "dependencies": {
-    "@deepseek-ai/dsh-home-paths": "0.2.0-rc.2"
   }
 }
