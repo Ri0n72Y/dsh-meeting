@@ -6,6 +6,8 @@ import type { SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-t
 import type {} from '@deepseek-ai/dsh-experimental-speech-to-text'
 import type {} from '@ri0n72y/dsh-meeting-context'
 import type {} from '@ri0n72y/dsh-meeting-speaker'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionCaptureRegistry } from './lifecycle.js'
 import { ContinuousCapture, type CaptureReceipt, type CaptureOptions } from './continuous.js'
 import { decodeWav, SAMPLE_RATE } from './wav.js'
 import { audioCheckpoint, saveAudioWindow } from './audio-files.js'
@@ -19,18 +21,18 @@ declare module '@deepseek-ai/cordis' {
   interface Context { meetingCapture: MeetingCapture }
 }
 export default class MeetingCapture extends Service {
-  static inject = ['meetingContext', 'speechToText', 'tools']
-  private readonly active = new Map<string, ContinuousCapture>()
+  static inject = ['meetingContext', 'speechToText', 'tools', 'sessions']
+  private readonly active = new SessionCaptureRegistry()
   private readonly starting = new Set<string>()
 
   constructor(ctx: Context) {
     super(ctx, 'meetingCapture')
-    ctx.effect(() => async () => {
-      await Promise.allSettled([...this.active.keys()].map(async id => {
-        this.active.get(id)?.cancel(new Error('Meeting capture plugin unloaded'))
-        await this.stop(id)
-      }))
-    }, 'meeting-capture: drain on unload')
+    ctx.on('session/disposed', (session) => {
+      void this.active.cancel(session.header.id, new Error('DSH Session disposed'))
+        .catch(error => ctx.logger('meeting-capture').warn('Session cleanup: ' + String(error)))
+    })
+    ctx.effect(() => () => this.active.cancelAll(new Error('Meeting capture plugin unloaded')),
+      'meeting-capture: drain on unload')
     ctx.effect(() => ctx.tools.register(defineTool({
       name: 'meeting_capture_file',
       description: 'Transcribe an existing canonical 16 kHz mono PCM16 WAV within the current DSH Session workspace using official local SenseVoice.',
@@ -79,6 +81,8 @@ export default class MeetingCapture extends Service {
       const speech = this.ctx.speechToText
       const provider = speech.snapshot().providers.find(p => p.id === 'sensevoice-local')
       if (!provider || provider.location !== 'host-local') throw new Error('Local SenseVoice is not registered')
+      const owner = this.ctx.sessions.get(sessionId as SessionId)
+      if (!owner) throw new Error('Meeting requires a live DSH Session')
       const store = this.ctx.meetingContext.storeFor(sessionId)
       const dir = join(store.directory(sessionId), 'audio')
       const checkpoint = await audioCheckpoint(dir)
@@ -88,6 +92,10 @@ export default class MeetingCapture extends Service {
       // Resume preserves all transcript lines and the cumulative audio timeline.
       if (previous) await store.resume(sessionId)
       else await store.begin(sessionId)
+      if (this.ctx.sessions.get(sessionId as SessionId) !== owner) {
+        await store.interrupt(sessionId, 'Session disposed during capture start')
+        throw new Error('Session disposed during capture start')
+      }
       const speaker = this.ctx.get('meetingSpeaker')
       if (previous && speaker) {
         const ids = previous.segments.flatMap(line =>
@@ -123,7 +131,19 @@ export default class MeetingCapture extends Service {
           return line
         },
       }, { offsetSamples: checkpoint.offsetSamples, signal: options.signal })
-      this.active.set(sessionId, capture)
+      if (this.ctx.sessions.get(sessionId as SessionId) !== owner) {
+        capture.cancel(new Error('Session disposed during capture start'))
+        await store.interrupt(sessionId, 'Session disposed during capture start')
+        throw new Error('Session disposed during capture start')
+      }
+      this.active.add(sessionId, {
+        capture,
+        async settle(receipt) {
+          if (receipt.interrupted) await store.interrupt(sessionId, receipt.errors.at(-1) ?? 'Capture cancelled or interrupted')
+          else await store.finish(sessionId)
+        },
+        release: () => this.ctx.get('meetingSpeaker')?.forget(sessionId),
+      })
       return capture
     } finally { this.starting.delete(sessionId) }
   }
@@ -133,18 +153,7 @@ export default class MeetingCapture extends Service {
     if (!capture) return Promise.reject(new Error('Session capture is not active'))
     return capture.push(samples)
   }
-  async stop(sessionId: string): Promise<CaptureReceipt> {
-    const capture = this.active.get(sessionId)
-    if (!capture) throw new Error('Session capture is not active')
-    try {
-      const receipt = await capture.stop()
-      const store = this.ctx.meetingContext.storeFor(sessionId)
-      if (receipt.interrupted) await store.interrupt(sessionId, receipt.errors.at(-1) ?? 'Capture cancelled or interrupted')
-      else await store.finish(sessionId)
-      return receipt
-    } finally {
-      this.active.delete(sessionId)
-      this.ctx.get('meetingSpeaker')?.forget(sessionId)
-    }
+  stop(sessionId: string): Promise<CaptureReceipt> {
+    return this.active.stop(sessionId)
   }
 }
