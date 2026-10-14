@@ -1,0 +1,10 @@
+- insert:
+    - id: meeting-context
+      name: '@ri0n72y/dsh-meeting-context'
+    - id: meeting-speaker
+      name: '@ri0n72y/dsh-meeting-speaker'
+      config:
+        modelPath: ''
+        segmentationModelPath: ''
+    - id: meeting-capture
+      name: '@ri0n72y/dsh-meeting-capture'

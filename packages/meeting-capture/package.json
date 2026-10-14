@@ -1,0 +1,19 @@
+{
+  "name": "@ri0n72y/dsh-meeting-capture",
+  "version": "0.0.1", "private": true, "type": "module",
+  "main": "dist/index.js", "types": "dist/index.d.ts", "files": ["dist/**"],
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./browser": { "types": "./dist/client/browser.d.ts", "default": "./dist/client/browser.js" }
+  },
+  "scripts": { "build": "tsdown src/index.ts --format esm --dts --out-dir dist && tsdown src/browser.ts --format esm --dts --out-dir dist/client" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-experimental-speech-to-text": "0.2.0-rc.2",
+    "@ri0n72y/dsh-meeting-context": "workspace:*",
+    "@ri0n72y/dsh-meeting-speaker": "workspace:*"
+  },
+  "peerDependenciesMeta": { "@ri0n72y/dsh-meeting-speaker": { "optional": true } },
+  "dependencies": { "@deepseek-ai/dsh-home-paths": "0.2.0-rc.2" }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@ri0n72y/dsh-meeting-speaker",
+  "version": "0.0.1", "private": true, "type": "module",
+  "main": "dist/index.js", "types": "dist/index.d.ts", "files": ["dist/**"],
+  "scripts": { "build": "tsdown src/index.ts --format esm --dts --out-dir dist" },
+  "peerDependencies": { "@deepseek-ai/cordis": "0.2.0-rc.2", "sherpa-onnx-node": ">=1.13.8" },
+  "peerDependenciesMeta": { "sherpa-onnx-node": { "optional": true } },
+  "dependencies": { "@deepseek-ai/schemastery": "0.2.0-rc.2" }
+}

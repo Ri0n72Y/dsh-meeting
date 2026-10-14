@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DSH Meeting microphone capability proof</title>
+<style>body{font:16px system-ui;max-width:640px;margin:4rem auto;padding:1rem}button{padding:.7rem 1rem}</style>
+<h1>Continuous microphone capture</h1>
+<p>Run over localhost or HTTPS. This proves the browser source only; DSH Host transport comes later.</p>
+<button id="start">Start microphone</button>
+<button id="stop" disabled>Stop</button>
+<p id="status" role="status">Idle</p>
+<p id="frames">0 PCM samples (16 kHz)</p>
+<script type="module">
+  import { BrowserMicrophone } from '../packages/meeting-capture/dist/client/browser.js'
+  let mic
+  let count=0
+  document.getElementById('start').onclick=async()=>{
+    mic=new BrowserMicrophone()
+    try {
+      await mic.start(samples=>{
+        count+=samples.length
+        document.getElementById('frames').textContent=count+' PCM samples (16 kHz)'
+      })
+      document.getElementById('status').textContent='Recording'
+      document.getElementById('start').disabled=true
+      document.getElementById('stop').disabled=false
+    } catch(e){ document.getElementById('status').textContent=String(e) }
+  }
+  document.getElementById('stop').onclick=async()=>{
+    await mic?.stop()
+    document.getElementById('status').textContent='Stopped'
+    document.getElementById('stop').disabled=true
+    document.getElementById('start').disabled=false
+  }
+</script>
+</html>
