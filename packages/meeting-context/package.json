@@ -5,8 +5,17 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist/**"],
-  "scripts": { "build": "tsdown src/index.ts --format esm --dts --out-dir dist" },
-  "peerDependencies": { "@deepseek-ai/cordis": "0.2.0-rc.2", "@deepseek-ai/dsh-tools": "0.2.0-rc.2" },
-  "dependencies": { "@deepseek-ai/dsh-home-paths": "0.2.0-rc.2" }
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsdown src/index.ts --format esm --dts --out-dir dist"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-home-paths": "0.2.0-rc.2"
+  }
 }
