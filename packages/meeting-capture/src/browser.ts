@@ -1,4 +1,4 @@
-/** Browser-only microphone source. Independent of any Sidebar or Agent UI. */
+/** Browser-only microphone source; single-use to keep permission races auditable. */
 export class BrowserMicrophone {
   private context: AudioContext | null = null
   private tracks: MediaStream | null = null
@@ -6,13 +6,22 @@ export class BrowserMicrophone {
   private node: AudioWorkletNode | null = null
   private nextFrame = 0
   private stopped = false
+  private opening: Promise<void> | null = null
 
-  async start(onPcm: (frame: Float32Array) => void): Promise<void> {
-    if (this.context || this.tracks || this.stopped) throw new Error('Microphone source already used')
+  start(onPcm: (frame: Float32Array) => void): Promise<void> {
+    if (this.opening || this.context || this.tracks || this.stopped) {
+      return Promise.reject(new Error('Microphone source already started or stopped'))
+    }
+    const task = this.acquire(onPcm)
+    this.opening = task
+    void task.finally(() => { if (this.opening === task) this.opening = null }).catch(() => undefined)
+    return task
+  }
+  private async acquire(onPcm: (frame: Float32Array) => void): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true }, video: false,
     })
-    if (this.stopped) { stream.getTracks().forEach(t => t.stop()); throw new Error('Microphone stopped') }
+    if (this.stopped) { stream.getTracks().forEach(track => track.stop()); throw new Error('Microphone stopped') }
     this.tracks = stream
     try {
       const context = new AudioContext()
@@ -27,6 +36,7 @@ export class BrowserMicrophone {
       registerProcessor('dsh-meeting-capture', MeetingWorklet)`
       const url = URL.createObjectURL(new Blob([script], { type: 'application/javascript' }))
       try { await context.audioWorklet.addModule(url) } finally { URL.revokeObjectURL(url) }
+      if (this.stopped) throw new Error('Microphone stopped')
       const worklet = new AudioWorkletNode(context, 'dsh-meeting-capture')
       this.node = worklet
       const ratio = context.sampleRate / 16000
@@ -46,9 +56,10 @@ export class BrowserMicrophone {
       this.source.connect(worklet)
       worklet.connect(context.destination)
       await context.resume()
+      if (this.stopped) throw new Error('Microphone stopped')
     } catch (error) { await this.stop(); throw error }
   }
-
+  /** Invalidate pending permission grants without waiting for the user to dismiss a prompt. */
   async stop(): Promise<void> {
     if (this.stopped) return
     this.stopped = true
