@@ -117,3 +117,19 @@ test('upstream cancellation reaches in-flight recognition and returns interrupte
   assert.equal(result.interrupted, true)
   assert.equal(result.processed, 0)
 })
+
+test('short quiet utterance within five-second window reaches ASR', async () => {
+  let processed = 0
+  const recording = new Float32Array(SAMPLE_RATE * 5)
+  // 300ms phrase at amplitude .03 has whole-window RMS ~.00735 (< .008).
+  recording.fill(0.03, SAMPLE_RATE, SAMPLE_RATE + 4800)
+  const capture = new ContinuousCapture({
+    async persist() {},
+    async process() { processed++; return null },
+  })
+  await capture.push(recording)
+  const result = await capture.stop()
+  assert.equal(result.captured, 1)
+  assert.equal(result.silent, 0)
+  assert.equal(processed, 1)
+})

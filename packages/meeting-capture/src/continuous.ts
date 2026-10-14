@@ -34,10 +34,16 @@ const MAX_INPUT = 10 * SAMPLE_RATE
 const MIN_ASR_TAIL = Math.round(0.35 * SAMPLE_RATE)
 const RMS_GATE = 0.008
 
+/** Detect local 100ms activity: whole-window RMS hides isolated phrases. */
 function audible(samples: Float32Array): boolean {
-  let energy = 0
-  for (const sample of samples) energy += sample * sample
-  return Math.sqrt(energy / samples.length) >= RMS_GATE
+  const FRAME = Math.round(SAMPLE_RATE / 10)
+  for (let start = 0; start < samples.length; start += FRAME) {
+    const end = Math.min(samples.length, start + FRAME)
+    let energy = 0
+    for (let i = start; i < end; i++) energy += samples[i]! * samples[i]!
+    if (Math.sqrt(energy / (end - start)) >= RMS_GATE) return true
+  }
+  return false
 }
 
 /** Await push() for durable ingestion. Recognition runs in a bounded independent lane. */
