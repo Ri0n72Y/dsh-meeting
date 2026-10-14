@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MeetingStore } from '../packages/meeting-context/src/store.js'
+import { MeetingStore, sessionDirectoryName } from '../packages/meeting-context/src/store.js'
 
 test('Session-scoped journal survives service recreation and remains isolated', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'dsh-meeting-'))
@@ -47,6 +47,20 @@ test('writes are serialized and invalid Session ids are rejected', async () => {
       store.append('alpha', { startMs: 2000, endMs: 3000, text: 'two', speakerId: 'Speaker 2' }),
     ])
     assert.equal((await store.read('alpha'))?.segments.length, 2)
-    await assert.rejects(store.begin('../escape'), /Invalid/)
+    assert.match(sessionDirectoryName('../escape'), /^[a-f0-9]{64}$/)
+    assert.notEqual(sessionDirectoryName('team:demo'), sessionDirectoryName('team/demo'))
   } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('opaque Session IDs are safe and meeting audio is ignored by workspace Git', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'dsh-workspace-'))
+  try {
+    const root = join(cwd, '.dsh-meeting')
+    const store = new MeetingStore(root)
+    await store.begin('team:demo/meeting.1')
+    assert.equal((await store.read('team:demo/meeting.1'))?.sessionId, 'team:demo/meeting.1')
+    assert.equal((await store.read('team:demo/meeting.2')), null)
+    assert.equal(await readFile(join(root, '.gitignore'), 'utf8'), '*\\n!/.gitignore\\n')
+    assert.match(store.directory('team:demo/meeting.1'), /[a-f0-9]{64}$/)
+  } finally { await rm(cwd, { recursive: true, force: true }) }
 })

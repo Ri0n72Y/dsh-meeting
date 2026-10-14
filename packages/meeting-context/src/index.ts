@@ -2,7 +2,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { join } from 'node:path'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { MeetingStore, validSessionId } from './store.js'
+import { MeetingStore, sessionDirectoryName } from './store.js'
 export type { MeetingLine, MeetingSnapshot } from './store.js'
 export { MeetingStore } from './store.js'
 
@@ -37,12 +37,14 @@ export default class MeetingContext extends Service {
     })), 'meeting-context: status tool')
   }
   storeFor(sessionId: string): MeetingStore {
-    validSessionId(sessionId)
+    sessionDirectoryName(sessionId)
     const session = this.ctx.sessions.get(sessionId as SessionId)
-    if (!session?.header.cwd) throw new Error('Meeting requires a live DSH Session workspace')
+    if (!session) throw new Error('Meeting requires a live DSH Session')
     let store = this.stores.get(sessionId)
     if (!store) {
-      store = new MeetingStore(join(session.header.cwd, '.dsh-meeting'))
+      // DSH SessionHeader.cwd is optional. Its absent-workspace fallback is the
+      // current Host workspace (also the DSH shell's process default).
+      store = new MeetingStore(join(session.header.cwd ?? process.cwd(), '.dsh-meeting'))
       this.stores.set(sessionId, store)
     }
     return store
