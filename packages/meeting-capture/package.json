@@ -1,12 +1,12 @@
 {
   "name": "@ri0n72y/dsh-meeting-capture",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist/**"
+    "dist/**",
+    "cordis.patch.yml"
   ],
   "exports": {
     ".": {
@@ -30,11 +30,17 @@
     "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
     "@deepseek-ai/dsh-experimental-speech-to-text": "0.2.0-rc.2",
     "@ri0n72y/dsh-meeting-context": "workspace:*",
-    "@ri0n72y/dsh-meeting-speaker": "workspace:*"
+    "@ri0n72y/dsh-meeting-speaker": "workspace:*",
+    "@deepseek-ai/dsh-session": "0.2.0-rc.2"
   },
   "peerDependenciesMeta": {
     "@ri0n72y/dsh-meeting-speaker": {
       "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
   }
 }

@@ -1,12 +1,12 @@
 {
   "name": "@ri0n72y/dsh-meeting-speaker",
   "version": "0.0.1",
-  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist/**"
+    "dist/**",
+    "cordis.patch.yml"
   ],
   "scripts": {
     "build": "tsdown src/index.ts --format esm --dts --out-dir dist",
@@ -31,5 +31,10 @@
       "default": "./dist/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   }
 }

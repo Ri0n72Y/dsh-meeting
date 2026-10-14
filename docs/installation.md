@@ -1,0 +1,46 @@
+# Install and enable Meeting capabilities independently
+
+Target: DeepSeek Harness `0.2.0-rc.2`. Each capability declares its own `dsh.bundle.patch` and can be added to a DSH profile separately. The combined `bundles/dsh-meeting` package remains available as a convenience composition.
+
+## Profile and dependency order
+
+Initialize a new Web-based profile to supply the DSH Session, Tools and Web services:
+
+```sh
+pnpm dsh --profile meeting --from-default-profile web --dump-default-config
+```
+
+Then add only the capabilities needed, in dependency order:
+
+```sh
+pnpm dsh plugin --profile meeting add ./packages/meeting-context
+pnpm dsh plugin --profile meeting add ./packages/meeting-speaker
+pnpm dsh plugin --profile meeting add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
+pnpm dsh plugin --profile meeting add ./packages/meeting-capture
+```
+
+- **Context** works with Tools + Sessions and has no recording dependency.
+- **Speaker** registers a service independently; native model files are optional until configured.
+- **Capture** requires Context and the official SpeechToText provider `sensevoice-local`; it does **not** replace the official Voice Input Bundle. Speaker is optional at runtime.
+- The **combined bundle** activates the three Meeting services together but still requires the official Voice Input Bundle.
+
+Verify configuration composition (this check does not require a microphone or model):
+
+```sh
+pnpm dsh --profile meeting --dump-config
+```
+
+The printed configuration must include `meeting-context`, `meeting-speaker`, `speech-to-text`, `speech-to-text-sensevoice`, and `meeting-capture`. Do not confuse bundle registration with an end-to-end working microphone; browser→Host transport is a later milestone.
+
+## Workspace storage and privacy
+
+Recordings stay in the Session Workspace, at:
+
+```text
+<Session Workspace>/.dsh-meeting/<sha256(sessionId)>/state.json
+<Session Workspace>/.dsh-meeting/<sha256(sessionId)>/audio/000000.wav
+```
+
+The mapping hashes the opaque DSH Session ID for safe cross-platform file paths; `state.json` retains the original ID and checks it on read. An `.dsh-meeting/.gitignore` with `*` and `!/.gitignore` is installed before any transcript or audio write, so ordinary Git adds do not include recordings. Explicit forced adds and non-Git syncing remain the user's responsibility.
+
+If `Session.header.cwd` is absent, the fallback Workspace is the Host process's current working directory, as in the DSH no-cwd shell default. This is still a Workspace, **never DSH_HOME**.
