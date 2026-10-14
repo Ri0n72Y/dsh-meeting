@@ -1,8 +1,8 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-export type MeetingPhase = 'recording' | 'stopped'
+export type MeetingPhase = 'recording' | 'interrupted' | 'stopped'
 export interface SpeakerTurn { readonly startMs: number; readonly endMs: number; readonly speakerId: string | null }
 export interface MeetingLine {
   readonly startMs: number
@@ -16,9 +16,10 @@ export interface MeetingSnapshot {
   readonly phase: MeetingPhase
   readonly revision: number
   readonly segments: readonly MeetingLine[]
+  readonly interruption?: string
 }
 
-function validSessionId(id: string): void {
+export function validSessionId(id: string): void {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw new Error('Invalid DSH Session id')
 }
 function validateLine(item: MeetingLine): void {
@@ -36,10 +37,13 @@ function validateLine(item: MeetingLine): void {
   }
 }
 
+/** The root is <Session.cwd>/.dsh-meeting, not global DSH_HOME. */
 export class MeetingStore {
   private readonly queues = new Map<string, Promise<unknown>>()
   constructor(private readonly root: string) {}
-  private path(id: string): string { validSessionId(id); return join(this.root, id, 'state.json') }
+  directory(id: string): string { validSessionId(id); return join(this.root, id) }
+  private path(id: string): string { return join(this.directory(id), 'state.json') }
+
   async read(id: string): Promise<MeetingSnapshot | null> {
     try { return JSON.parse(await readFile(this.path(id), 'utf8')) as MeetingSnapshot }
     catch (error) {
@@ -52,13 +56,12 @@ export class MeetingStore {
     const task = prior.catch(() => undefined).then(async () => {
       const next = mutation(await this.read(id))
       const path = this.path(id)
-      await mkdir(join(this.root, id), { recursive: true })
+      await mkdir(this.directory(id), { recursive: true })
       const temporary = path + '.' + randomUUID() + '.tmp'
       try {
         await writeFile(temporary, JSON.stringify(next, null, 2) + '\n', { flag: 'wx' })
         await rename(temporary, path)
       } catch (error) {
-        const { rm } = await import('node:fs/promises')
         await rm(temporary, { force: true }).catch(() => undefined)
         throw error
       }
@@ -70,9 +73,16 @@ export class MeetingStore {
   }
   async begin(id: string): Promise<MeetingSnapshot> {
     return this.update(id, state => {
-      if (state?.phase === 'recording') throw new Error('Recording already active')
-      if (state) throw new Error('Session meeting already ended; create another DSH Session')
+      if (state?.phase === 'recording') throw new Error('Recording already active; use resume')
+      if (state) throw new Error('Session meeting already exists; use resume if interrupted')
       return { sessionId: id, phase: 'recording', revision: 0, segments: [] }
+    })
+  }
+  /** Explicitly reclaim a Session whose prior Host no longer owns the capture. */
+  async resume(id: string): Promise<MeetingSnapshot> {
+    return this.update(id, state => {
+      if (!state || state.phase === 'stopped') throw new Error('No resumable meeting in Session')
+      return { ...state, phase: 'recording', revision: state.revision + 1, interruption: undefined }
     })
   }
   async append(id: string, line: MeetingLine): Promise<MeetingSnapshot> {
@@ -88,7 +98,14 @@ export class MeetingStore {
     return this.update(id, state => {
       if (!state) throw new Error('Meeting does not exist')
       if (state.phase === 'stopped') return state
-      return { ...state, phase: 'stopped', revision: state.revision + 1 }
+      return { ...state, phase: 'stopped', revision: state.revision + 1, interruption: undefined }
+    })
+  }
+  async interrupt(id: string, reason: string): Promise<MeetingSnapshot> {
+    return this.update(id, state => {
+      if (!state) throw new Error('Meeting does not exist')
+      if (state.phase !== 'recording') return state
+      return { ...state, phase: 'interrupted', revision: state.revision + 1, interruption: reason.slice(0, 500) }
     })
   }
 }

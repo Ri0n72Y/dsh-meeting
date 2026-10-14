@@ -10,6 +10,11 @@ export interface EmbeddingEngine {
 export class SpeakerTracker {
   private readonly sessions = new Map<string, { manager: EmbeddingManager; next: number }>()
   constructor(private readonly engine: EmbeddingEngine, private readonly threshold = 0.6) {}
+  /** After restarting, do not reuse old labels without retaining voice embeddings. */
+  seed(sessionId: string, next: number): void {
+    if (!Number.isSafeInteger(next) || next < 1) throw new Error('Invalid next speaker number')
+    if (!this.sessions.has(sessionId)) this.sessions.set(sessionId, { manager: this.engine.manager(), next })
+  }
   identify(sessionId: string, samples: Float32Array): string | null {
     if (samples.length < 1600) return null
     let state = this.sessions.get(sessionId)

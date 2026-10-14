@@ -23,6 +23,11 @@ export default class MeetingSpeaker extends Service {
   private tracker: SpeakerTracker | null = null
   private timeline: SpeakerTimeline | null = null
   constructor(ctx: Context, private readonly config: Config) { super(ctx, 'meetingSpeaker') }
+  seed(sessionId: string, next: number): void {
+    if (!this.config.modelPath.trim()) return
+    this.tracker ??= new SpeakerTracker(createSherpaEngine(this.config.modelPath), this.config.threshold)
+    this.tracker.seed(sessionId, next)
+  }
   identify(sessionId: string, samples: Float32Array): string | null {
     if (!this.config.modelPath.trim()) return null
     this.tracker ??= new SpeakerTracker(createSherpaEngine(this.config.modelPath), this.config.threshold)
