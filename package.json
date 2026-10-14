@@ -3,12 +3,19 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.7.0",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "pnpm -r --filter './packages/**' run build",
     "test": "tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm -r --filter './packages/**' run typecheck && tsc -p tsconfig.json --noEmit",
     "proof": "tsx scripts/proof.mts"
   },
-  "devDependencies": { "typescript": "~5.9.3", "tsx": "^4.20.0", "tsdown": "^0.15.7", "@types/node": "^24.0.0" }
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "tsx": "^4.20.0",
+    "tsdown": "^0.15.7",
+    "@types/node": "^24.0.0"
+  }
 }

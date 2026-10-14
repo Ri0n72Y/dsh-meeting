@@ -9,7 +9,8 @@
     "dist/**"
   ],
   "scripts": {
-    "build": "tsdown src/index.ts --format esm --dts --out-dir dist"
+    "build": "tsdown src/index.ts --format esm --dts --out-dir dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
@@ -22,5 +23,13 @@
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.4"
+  },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
   }
 }

@@ -32,4 +32,4 @@ pnpm proof
 # Browser microphone proof after build: serve repo over localhost and open /examples/microphone.html
 ```
 
-CI owns these checks; initial compatibility with Windows, official Speech and sherpa bindings is assumed, not independently verified. See `docs/milestones.md` for gaps and acceptance.
+CI owns these checks; initial compatibility with Windows, official Speech and sherpa bindings is assumed, not independently verified. See `docs/milestones.md` for gaps and acceptance and `docs/architecture.md` for the multi-package TypeScript contract.

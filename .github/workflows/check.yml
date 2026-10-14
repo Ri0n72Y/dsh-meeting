@@ -16,7 +16,10 @@ jobs:
         with:
           node-version: 24
       - run: pnpm install --no-frozen-lockfile
-      - run: pnpm run build
-      - run: pnpm run typecheck
+      - name: Source typecheck without generated dist
+        run: pnpm run typecheck
       - run: pnpm test
+      - run: pnpm run build
+      - name: Typecheck with generated dist present
+        run: pnpm run typecheck
       - run: pnpm proof
