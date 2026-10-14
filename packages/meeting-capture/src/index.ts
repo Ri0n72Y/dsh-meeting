@@ -1,18 +1,19 @@
-import { readFile, mkdir, writeFile, realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { join, isAbsolute, relative, sep } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type {} from '@deepseek-ai/dsh-experimental-speech-to-text'
 import type {} from '@ri0n72y/dsh-meeting-context'
 import type {} from '@ri0n72y/dsh-meeting-speaker'
-import { ContinuousCapture, type CaptureReceipt } from './continuous.js'
+import { ContinuousCapture, type CaptureReceipt, type CaptureOptions } from './continuous.js'
 import { decodeWav, SAMPLE_RATE } from './wav.js'
+import { audioCheckpoint, saveAudioWindow } from './audio-files.js'
 
 export { ContinuousCapture } from './continuous.js'
-export type { CapturedLine, CaptureReceipt, CapturePorts, SpeakerTurn } from './continuous.js'
+export type { CapturedLine, CaptureReceipt, CapturePorts, SpeakerTurn, CaptureOptions } from './continuous.js'
 export { decodeWav, encodeWav, SAMPLE_RATE } from './wav.js'
+export { audioCheckpoint, saveAudioWindow } from './audio-files.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { meetingCapture: MeetingCapture }
@@ -20,16 +21,25 @@ declare module '@deepseek-ai/cordis' {
 export default class MeetingCapture extends Service {
   static inject = ['meetingContext', 'speechToText', 'tools']
   private readonly active = new Map<string, ContinuousCapture>()
+  private readonly starting = new Set<string>()
+
   constructor(ctx: Context) {
     super(ctx, 'meetingCapture')
-    ctx.tools.register(defineTool({
+    ctx.effect(() => async () => {
+      await Promise.allSettled([...this.active.keys()].map(async id => {
+        this.active.get(id)?.cancel(new Error('Meeting capture plugin unloaded'))
+        await this.stop(id)
+      }))
+    }, 'meeting-capture: drain on unload')
+    ctx.effect(() => ctx.tools.register(defineTool({
       name: 'meeting_capture_file',
-      description: 'Transcribe an existing canonical 16 kHz mono PCM16 WAV file into this DSH Session meeting using the official local SenseVoice provider.',
+      description: 'Transcribe an existing canonical 16 kHz mono PCM16 WAV within the current DSH Session workspace using official local SenseVoice.',
       parameters: { path: { type: 'string', required: true } },
       output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
       execute: async (args, exec) => {
         if (!exec.agent) throw new Error('Meeting capture requires a DSH Session')
         if (!isAbsolute(args.path)) throw new Error('Provide an absolute WAV path')
+        const id = exec.agent.session.header.id
         const cwd = exec.agent.session.header.cwd
         if (!cwd) throw new Error('Session workspace is unavailable')
         const [root, audioPath] = await Promise.all([realpath(cwd), realpath(args.path)])
@@ -40,60 +50,101 @@ export default class MeetingCapture extends Service {
         if ((await stat(audioPath)).size > 32 * 1024 * 1024) throw new Error('Demo audio exceeds 32 MiB')
         const bytes = await readFile(audioPath, { signal: exec.signal })
         const samples = decodeWav(bytes)
-        const capture = await this.start(exec.agent.id)
-        for (let at = 0; at < samples.length; at += SAMPLE_RATE) capture.push(samples.subarray(at, at + SAMPLE_RATE))
-        const receipt = await this.stop(exec.agent.id)
-        return JSON.stringify(receipt, null, 2)
-      },
-    }))
-  }
-  async start(sessionId: string): Promise<ContinuousCapture> {
-    if (this.active.has(sessionId)) throw new Error('Session capture already active')
-    const speech = this.ctx.speechToText
-    const provider = speech.snapshot().providers.find(p => p.id === 'sensevoice-local')
-    if (!provider || provider.location !== 'host-local') throw new Error('Local SenseVoice is not registered')
-    await this.ctx.meetingContext.store.begin(sessionId)
-    let segment = 0
-    const dir = dshHomePath('meeting', 'sessions', sessionId, 'audio')
-    const capture = new ContinuousCapture({
-      persist: async wav => {
-        await mkdir(dir, { recursive: true })
-        await writeFile(join(dir, String(segment++).padStart(6, '0') + '.wav'), wav, { flag: 'wx' })
-      },
-      process: async (wav, samples, startMs, endMs) => {
-        const spec = speech.resolve({ audio: wav, providerId: 'sensevoice-local' as SpeechProviderId, language: 'auto' })
-        const result = await speech.transcribe(spec, new AbortController().signal)
-        if (!result.text.trim()) return null
-        let speakerId: string | null = null
-        let turns: { startMs: number; endMs: number; speakerId: string | null }[] = []
+        const capture = await this.start(id, { signal: exec.signal })
         try {
-          const speaker = this.ctx.get('meetingSpeaker')
-          turns = speaker?.diarize(sessionId, samples) ?? []
-          const unique = [...new Set(turns.map(turn => turn.speakerId).filter((id): id is string => id !== null))]
-          speakerId = unique.length === 1 ? unique[0]! : unique.length > 1 ? null
-            : speaker?.identify(sessionId, samples) ?? null
-          turns = turns.map(turn => ({ ...turn, startMs: turn.startMs + startMs, endMs: turn.endMs + startMs }))
-        } catch (error) { this.ctx.logger('meeting-capture').warn('Speaker identification failed: ' + String(error)) }
-        const line = { startMs, endMs, text: result.text, speakerId, ...(turns.length ? { turns } : {}) }
-        await this.ctx.meetingContext.store.append(sessionId, line)
-        return line
+          for (let at = 0; at < samples.length; at += SAMPLE_RATE) {
+            exec.signal.throwIfAborted()
+            await capture.push(samples.subarray(at, at + SAMPLE_RATE))
+          }
+          const result = await this.stop(id)
+          exec.signal.throwIfAborted()
+          return JSON.stringify(result, null, 2)
+        } finally {
+          if (this.active.get(id) === capture) {
+            capture.cancel(new Error('Meeting file capture interrupted'))
+            await this.stop(id)
+          }
+        }
       },
-    })
-    this.active.set(sessionId, capture)
-    return capture
+    })), 'meeting-capture: file proof tool')
   }
-  push(sessionId: string, samples: Float32Array): void {
+
+  async start(sessionId: string, options: Pick<CaptureOptions, 'signal'> = {}): Promise<ContinuousCapture> {
+    if (this.active.has(sessionId) || this.starting.has(sessionId)) {
+      throw new Error('Session capture already active or starting')
+    }
+    this.starting.add(sessionId)
+    try {
+      options.signal?.throwIfAborted()
+      const speech = this.ctx.speechToText
+      const provider = speech.snapshot().providers.find(p => p.id === 'sensevoice-local')
+      if (!provider || provider.location !== 'host-local') throw new Error('Local SenseVoice is not registered')
+      const store = this.ctx.meetingContext.storeFor(sessionId)
+      const dir = join(store.directory(sessionId), 'audio')
+      const checkpoint = await audioCheckpoint(dir)
+      const previous = await store.read(sessionId)
+      if (previous?.phase === 'stopped') throw new Error('Meeting already stopped; create a new DSH Session')
+      options.signal?.throwIfAborted()
+      // Resume preserves all transcript lines and the cumulative audio timeline.
+      if (previous) await store.resume(sessionId)
+      else await store.begin(sessionId)
+      const speaker = this.ctx.get('meetingSpeaker')
+      if (previous && speaker) {
+        const ids = previous.segments.flatMap(line =>
+          [line.speakerId, ...(line.turns ?? []).map(turn => turn.speakerId)])
+        const highest = Math.max(0, ...ids.map(id => id ? Number(id.slice('Speaker '.length)) || 0 : 0))
+        speaker.seed(sessionId, highest + 1)
+      }
+      let index = checkpoint.nextIndex
+      const capture = new ContinuousCapture({
+        persist: async (wav, _startMs, _endMs, signal) => {
+          await saveAudioWindow(dir, index, wav, signal)
+          index++
+        },
+        process: async (wav, samples, startMs, endMs, signal) => {
+          signal.throwIfAborted()
+          const spec = speech.resolve({ audio: wav, providerId: 'sensevoice-local' as SpeechProviderId, language: 'auto' })
+          const result = await speech.transcribe(spec, signal)
+          signal.throwIfAborted()
+          if (!result.text.trim()) return null
+          let speakerId: string | null = null
+          let turns: { startMs: number; endMs: number; speakerId: string | null }[] = []
+          try {
+            const service = this.ctx.get('meetingSpeaker')
+            turns = service?.diarize(sessionId, samples) ?? []
+            const unique = [...new Set(turns.map(turn => turn.speakerId).filter((id): id is string => id !== null))]
+            speakerId = unique.length === 1 ? unique[0]! : unique.length > 1 ? null
+              : service?.identify(sessionId, samples) ?? null
+            turns = turns.map(turn => ({ ...turn, startMs: turn.startMs + startMs, endMs: turn.endMs + startMs }))
+          } catch (error) { this.ctx.logger('meeting-capture').warn('Speaker identification failed: ' + String(error)) }
+          signal.throwIfAborted()
+          const line = { startMs, endMs, text: result.text, speakerId, ...(turns.length ? { turns } : {}) }
+          await store.append(sessionId, line)
+          return line
+        },
+      }, { offsetSamples: checkpoint.offsetSamples, signal: options.signal })
+      this.active.set(sessionId, capture)
+      return capture
+    } finally { this.starting.delete(sessionId) }
+  }
+  /** Await each push for durable audio ingestion and built-in ASR backpressure. */
+  push(sessionId: string, samples: Float32Array): Promise<void> {
     const capture = this.active.get(sessionId)
-    if (!capture) throw new Error('Session capture is not active')
-    capture.push(samples)
+    if (!capture) return Promise.reject(new Error('Session capture is not active'))
+    return capture.push(samples)
   }
   async stop(sessionId: string): Promise<CaptureReceipt> {
     const capture = this.active.get(sessionId)
     if (!capture) throw new Error('Session capture is not active')
     try {
       const receipt = await capture.stop()
-      await this.ctx.meetingContext.store.finish(sessionId)
+      const store = this.ctx.meetingContext.storeFor(sessionId)
+      if (receipt.interrupted) await store.interrupt(sessionId, receipt.errors.at(-1) ?? 'Capture cancelled or interrupted')
+      else await store.finish(sessionId)
       return receipt
-    } finally { this.active.delete(sessionId); this.ctx.get('meetingSpeaker')?.forget(sessionId) }
+    } finally {
+      this.active.delete(sessionId)
+      this.ctx.get('meetingSpeaker')?.forget(sessionId)
+    }
   }
 }
