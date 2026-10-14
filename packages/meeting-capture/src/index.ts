@@ -1,5 +1,5 @@
-import { readFile, mkdir, writeFile } from 'node:fs/promises'
-import { join, isAbsolute } from 'node:path'
+import { readFile, mkdir, writeFile, realpath, stat } from 'node:fs/promises'
+import { join, isAbsolute, relative, sep } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -30,8 +30,15 @@ export default class MeetingCapture extends Service {
       execute: async (args, exec) => {
         if (!exec.agent) throw new Error('Meeting capture requires a DSH Session')
         if (!isAbsolute(args.path)) throw new Error('Provide an absolute WAV path')
-        const bytes = await readFile(args.path)
-        if (bytes.length > 32 * 1024 * 1024) throw new Error('Demo audio exceeds 32 MiB')
+        const cwd = exec.agent.session.header.cwd
+        if (!cwd) throw new Error('Session workspace is unavailable')
+        const [root, audioPath] = await Promise.all([realpath(cwd), realpath(args.path)])
+        const within = relative(root, audioPath)
+        if (within === '..' || within.startsWith('..' + sep) || isAbsolute(within)) {
+          throw new Error('Recording must be inside this Session workspace')
+        }
+        if ((await stat(audioPath)).size > 32 * 1024 * 1024) throw new Error('Demo audio exceeds 32 MiB')
+        const bytes = await readFile(audioPath, { signal: exec.signal })
         const samples = decodeWav(bytes)
         const capture = await this.start(exec.agent.id)
         for (let at = 0; at < samples.length; at += SAMPLE_RATE) capture.push(samples.subarray(at, at + SAMPLE_RATE))
