@@ -1,6 +1,6 @@
 /**
- * Deterministic demonstrations without microphone hardware or installed model.
- * Not evidence of SenseVoice accuracy or sherpa-onnx runtime compatibility.
+ * Deterministic demonstrations without microphone hardware or installed models.
+ * Does not prove SenseVoice accuracy or sherpa-onnx runtime compatibility.
  */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -11,7 +11,7 @@ import { SpeakerTracker } from '../packages/meeting-speaker/src/tracker.js'
 
 const dir = await mkdtemp(join(tmpdir(), 'meeting-proof-'))
 try {
-  const store = new MeetingStore(dir)
+  const store = new MeetingStore(join(dir, '.dsh-meeting'))
   await store.begin('dsh-session-demo')
   const tracker = new SpeakerTracker({
     embed(samples) { return new Float32Array([samples[0]!]) },
@@ -32,8 +32,8 @@ try {
       return line
     },
   })
-  capture.push(new Float32Array(80_000).fill(0.1))
-  capture.push(new Float32Array(80_000).fill(0.9))
+  await capture.push(new Float32Array(80000).fill(0.1))
+  await capture.push(new Float32Array(80000).fill(0.9))
   const result = await capture.stop()
   await store.finish('dsh-session-demo')
   console.log('CAPTURE RECEIPT:', result)

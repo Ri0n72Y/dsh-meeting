@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { SpeakerTracker, type EmbeddingEngine } from '../packages/meeting-speaker/src/tracker.js'
 
-test('speaker identity is reused within a Session and isolated between Sessions', () => {
-  const engine: EmbeddingEngine = {
+function engine(): EmbeddingEngine {
+  return {
     embed(samples) { return new Float32Array([samples[0]!, 1 - samples[0]!]) },
     manager() {
       const voices = new Map<string, Float32Array>()
@@ -18,7 +18,9 @@ test('speaker identity is reused within a Session and isolated between Sessions'
       }
     },
   }
-  const tracker = new SpeakerTracker(engine, 0.6)
+}
+test('speaker identity is reused within a Session and isolated between Sessions', () => {
+  const tracker = new SpeakerTracker(engine(), 0.6)
   const a = new Float32Array(1600).fill(0.1)
   const b = new Float32Array(1600).fill(0.9)
   assert.equal(tracker.identify('meeting-a', a), 'Speaker 1')
@@ -26,4 +28,9 @@ test('speaker identity is reused within a Session and isolated between Sessions'
   assert.equal(tracker.identify('meeting-a', a), 'Speaker 1')
   assert.equal(tracker.identify('meeting-b', b), 'Speaker 1')
   assert.equal(tracker.identify('meeting-a', new Float32Array(100)), null)
+})
+test('recovered session does not claim new embeddings match previous identities', () => {
+  const tracker = new SpeakerTracker(engine())
+  tracker.seed('reopened', 4)
+  assert.equal(tracker.identify('reopened', new Float32Array(1600).fill(0.5)), 'Speaker 4')
 })

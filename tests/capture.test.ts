@@ -3,24 +3,28 @@ import { test } from 'node:test'
 import { ContinuousCapture } from '../packages/meeting-capture/src/continuous.js'
 import { SAMPLE_RATE, decodeWav } from '../packages/meeting-capture/src/wav.js'
 
-test('continuous PCM produces visible timed transcripts and keeps silent audio', async () => {
+const voiced = (seconds: number): Float32Array => new Float32Array(SAMPLE_RATE * seconds).fill(0.2)
+
+test('continuous PCM produces timed transcripts, silent windows and entire final tail', async () => {
   const saved: Array<{ start: number; end: number; frames: number }> = []
   const capture = new ContinuousCapture({
-    async persist(wav, start, end) {
-      saved.push({ start, end, frames: decodeWav(wav).length })
-    },
+    async persist(wav, start, end) { saved.push({ start, end, frames: decodeWav(wav).length }) },
     async process(_wav, _samples, start, end) {
       return { startMs: start, endMs: end, speakerId: null, text: 'recognized segment' }
     },
   })
-  capture.push(new Float32Array(SAMPLE_RATE * 5).fill(0.2))
-  capture.push(new Float32Array(SAMPLE_RATE * 5))
-  capture.push(new Float32Array(SAMPLE_RATE).fill(0.2))
+  await capture.push(voiced(5))
+  await capture.push(new Float32Array(SAMPLE_RATE * 5))
+  await capture.push(voiced(1))
+  await capture.push(new Float32Array(Math.round(SAMPLE_RATE * 0.1)).fill(0.2))
   const result = await capture.stop()
-  assert.equal(result.captured, 3)
-  assert.equal(result.silent, 1)
-  assert.deepEqual(result.lines.map(line => [line.startMs, line.endMs]), [[0, 5000], [10000, 11000]])
-  assert.deepEqual(saved.map(x => [x.start, x.end]), [[0, 5000], [5000, 10000], [10000, 11000]])
+  assert.equal(result.captured, 4)
+  assert.equal(result.silent, 2) // Entire 100ms tail saved but too short for ASR.
+  assert.equal(result.interrupted, false)
+  assert.deepEqual(result.lines.map(line => [line.startMs, line.endMs]), [[0, 5000], [10000, 11100]])
+  assert.deepEqual(saved.map(x => [x.start, x.end, x.frames]), [
+    [0, 5000, 80000], [5000, 10000, 80000], [10000, 11100, 17600],
+  ])
 })
 
 test('failed ASR preserves audio and subsequent windows', async () => {
@@ -33,9 +37,69 @@ test('failed ASR preserves audio and subsequent windows', async () => {
       return { startMs, endMs, text: 'recovered', speakerId: null }
     },
   })
-  capture.push(new Float32Array(SAMPLE_RATE * 10).fill(0.4))
+  await capture.push(voiced(10))
   const result = await capture.stop()
   assert.equal(persisted, 2)
   assert.equal(result.errors.length, 1)
+  assert.equal(result.interrupted, false)
   assert.equal(result.lines[0]?.text, 'recovered')
+})
+
+test('persist failure interrupts instead of poisoning all later windows', async () => {
+  let calls = 0
+  const capture = new ContinuousCapture({
+    async persist() { calls++; throw new Error('disk full') },
+    async process() { throw new Error('must not recognize unsaved audio') },
+  })
+  await assert.rejects(capture.push(voiced(5)), /disk full/)
+  const result = await capture.stop()
+  assert.equal(calls, 1)
+  assert.equal(result.captured, 0)
+  assert.equal(result.interrupted, true)
+  assert.match(result.errors[0]!, /Audio persistence/)
+  await assert.rejects(capture.push(voiced(5)), /Capture is stopped/)
+})
+
+test('slow ASR applies producer backpressure, not an unbounded audio backlog', async () => {
+  let release!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  let persisted = 0
+  const capture = new ContinuousCapture({
+    async persist() { persisted++ },
+    async process(_wav, _samples, startMs, endMs) {
+      if (startMs === 0) await gate
+      return { startMs, endMs, text: 'ok', speakerId: null }
+    },
+  }, { maxQueuedWindows: 1 })
+  await capture.push(voiced(5))
+  const pending = capture.push(voiced(5))
+  await new Promise<void>(resolve => { setImmediate(resolve) })
+  assert.equal(persisted, 1)
+  await assert.rejects(capture.push(voiced(1)), /Concurrent push/)
+  release()
+  await pending
+  assert.equal(persisted, 2)
+  assert.equal((await capture.stop()).processed, 2)
+})
+
+test('upstream cancellation reaches in-flight recognition and returns interrupted state', async () => {
+  const controller = new AbortController()
+  let entered!: () => void
+  const inside = new Promise<void>(resolve => { entered = resolve })
+  const capture = new ContinuousCapture({
+    async persist() {},
+    async process(_wav, _samples, _start, _end, signal) {
+      entered()
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+      })
+      return null
+    },
+  }, { signal: controller.signal })
+  await capture.push(voiced(5))
+  await inside
+  controller.abort(new Error('user cancelled'))
+  const result = await capture.stop()
+  assert.equal(result.interrupted, true)
+  assert.equal(result.processed, 0)
 })
