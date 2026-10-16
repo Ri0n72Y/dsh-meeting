@@ -41,6 +41,8 @@ Recordings stay in the Session Workspace, at:
 <Session Workspace>/.dsh-meeting/<sha256(sessionId)>/audio/000000.wav
 ```
 
-The mapping hashes the opaque DSH Session ID for safe cross-platform file paths; `state.json` retains the original ID and checks it on read. An `.dsh-meeting/.gitignore` with `*` and `!/.gitignore` is installed before any transcript or audio write, so ordinary Git adds do not include recordings. Explicit forced adds and non-Git syncing remain the user's responsibility.
+The mapping hashes the opaque DSH Session ID for safe cross-platform file paths; `state.json` retains the original ID and checks it on read. A safe ignore rule is created non-destructively in each hashed Session directory. A missing `.dsh-meeting/.gitignore` is also created, but an existing user-maintained root ignore file is **never overwritten**. Ordinary Git adds exclude transcript and WAV files under a protected Session directory; a pre-existing unsafe Session-level ignore file causes the recorder to fail closed. Forced Git adds and non-Git syncing remain the user's responsibility. 
 
 If `Session.header.cwd` is absent, the fallback Workspace is the Host process's current working directory, as in the DSH no-cwd shell default. This is still a Workspace, **never DSH_HOME**.
+
+Workspace confinement is checked against canonical filesystem paths. Existing symlinks that lead the meeting root, Session directory, audio directory, or state file outside the selected Session Workspace are rejected rather than silently followed. There is no migration of recordings into DSH_HOME.

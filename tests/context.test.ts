@@ -83,7 +83,7 @@ test('pre-existing workspace ignore rules remain unchanged, audio stays Git-igno
     await store.begin('alpha')
     const audio = await store.prepareAudio('alpha')
     assert.equal(await readFile(join(root, '.gitignore'), 'utf8'), authored)
-    assert.equal(await readFile(join(store.directory('alpha'), '.gitignore'), 'utf8'), '*\\n!/.gitignore\\n')
+    assert.equal(await readFile(join(store.directory('alpha'), '.gitignore'), 'utf8'), '*\n!/.gitignore\n')
     assert.equal(audio, join(store.directory('alpha'), 'audio'))
   } finally { await rm(cwd, { recursive: true, force: true }) }
 })
@@ -123,6 +123,26 @@ test('reject Session audio directory symlink escaping workspace', async () => {
     await store.begin('alpha')
     await symlink(outside, join(store.directory('alpha'), 'audio'), 'dir')
     await assert.rejects(store.prepareAudio('alpha'), /escapes Session Workspace/)
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  }
+})
+
+test('reject a symlinked hashed session directory and a symlinked state file', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'dsh-session-escape-'))
+  const outside = await mkdtemp(join(tmpdir(), 'dsh-target-'))
+  try {
+    const store = new MeetingStore(join(cwd, '.dsh-meeting'))
+    await mkdir(join(cwd, '.dsh-meeting'))
+    await symlink(outside, store.directory('alpha'), 'dir')
+    await assert.rejects(store.begin('alpha'), /escapes Session Workspace/)
+    await rm(store.directory('alpha'))
+    await store.begin('alpha')
+    await rm(join(store.directory('alpha'), 'state.json'))
+    await writeFile(join(outside, 'other.json'), '{"data":"secret"}')
+    await symlink(join(outside, 'other.json'), join(store.directory('alpha'), 'state.json'))
+    await assert.rejects(store.read('alpha'), /escapes Session Workspace/)
   } finally {
     await rm(cwd, { recursive: true, force: true })
     await rm(outside, { recursive: true, force: true })
