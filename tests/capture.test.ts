@@ -133,3 +133,45 @@ test('short quiet utterance within five-second window reaches ASR', async () => 
   assert.equal(result.silent, 0)
   assert.equal(processed, 1)
 })
+
+test('Session disposal keeps every accepted 1s and 4.9s buffered tail', async () => {
+  for (const size of [SAMPLE_RATE, SAMPLE_RATE * 4 + Math.floor(SAMPLE_RATE * 0.9)]) {
+    const stored: number[] = []
+    const capture = new ContinuousCapture({
+      async persist(wav) { stored.push(decodeWav(wav).length) },
+      async process() { throw new Error('Cancelled tail must not start ASR') },
+    })
+    await capture.push(new Float32Array(size).fill(0.3))
+    capture.cancel(new Error('session/disposed'))
+    const receipt = await capture.stop()
+    assert.deepEqual(stored, [size])
+    assert.equal(receipt.captured, 1)
+    assert.equal(receipt.interrupted, true)
+  }
+})
+
+test('cancel while queued behind slow ASR flushes a complete waiting PCM window', async () => {
+  const stored: number[] = []
+  let entered!: () => void
+  const enteredPromise = new Promise<void>(resolve => { entered = resolve })
+  const capture = new ContinuousCapture({
+    async persist(wav) { stored.push(decodeWav(wav).length) },
+    async process(_wav, _samples, _start, _end, signal) {
+      entered()
+      await new Promise<void>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason)
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+      return null
+    },
+  }, { maxQueuedWindows: 1 })
+  await capture.push(new Float32Array(SAMPLE_RATE * 5).fill(0.3))
+  await enteredPromise
+  const feeding = capture.push(new Float32Array(SAMPLE_RATE * 5).fill(0.3))
+  capture.cancel(new Error('session/disposed'))
+  await assert.rejects(feeding)
+  const receipt = await capture.stop()
+  assert.deepEqual(stored, [SAMPLE_RATE * 5, SAMPLE_RATE * 5])
+  assert.equal(receipt.captured, 2)
+  assert.equal(receipt.interrupted, true)
+})

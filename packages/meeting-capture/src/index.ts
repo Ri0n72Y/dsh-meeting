@@ -4,7 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { SpeechProviderId } from '@deepseek-ai/dsh-experimental-speech-to-text/types'
 import type {} from '@deepseek-ai/dsh-experimental-speech-to-text'
-import type {} from '@ri0n72y/dsh-meeting-context'
+import { sessionWorkspaceDirectory } from '@ri0n72y/dsh-meeting-context'
 import type {} from '@ri0n72y/dsh-meeting-speaker'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { SessionCaptureRegistry } from './lifecycle.js'
@@ -42,8 +42,7 @@ export default class MeetingCapture extends Service {
         if (!exec.agent) throw new Error('Meeting capture requires a DSH Session')
         if (!isAbsolute(args.path)) throw new Error('Provide an absolute WAV path')
         const id = exec.agent.session.header.id
-        const cwd = exec.agent.session.header.cwd
-        if (!cwd) throw new Error('Session workspace is unavailable')
+        const cwd = sessionWorkspaceDirectory(exec.agent.session.header.cwd)
         const [root, audioPath] = await Promise.all([realpath(cwd), realpath(args.path)])
         const within = relative(root, audioPath)
         if (within === '..' || within.startsWith('..' + sep) || isAbsolute(within)) {

@@ -55,6 +55,8 @@ export class ContinuousCapture {
   private feeding: Promise<void> | null = null
   private stopTask: Promise<CaptureReceipt> | null = null
   private readonly controller = new AbortController()
+  /** Cancellation stops ASR/intake, never an already accepted audio disk write. */
+  private readonly disk = new AbortController()
   private readonly waiters = new Set<() => void>()
   private readonly receipt: CaptureReceipt = { captured: 0, processed: 0, silent: 0, interrupted: false, errors: [], lines: [] }
   private readonly capacity: number
@@ -111,7 +113,7 @@ export class ContinuousCapture {
     const endMs = Math.round((this.consumed + samples.length) * 1000 / SAMPLE_RATE)
     const wav = encodeWav(samples)
     try {
-      await this.ports.persist(wav, startMs, endMs, this.signal)
+      await this.ports.persist(wav, startMs, endMs, this.disk.signal)
     } catch (error) {
       this.receipt.errors.push('Audio persistence at ' + startMs + 'ms: ' + String(error))
       this.fatal = true
@@ -123,6 +125,21 @@ export class ContinuousCapture {
     if (!speech) { this.receipt.silent++; return }
     this.queue.push({ wav, samples, startMs, endMs })
     this.processQueue()
+  }
+  /** Drain accepted PCM on cancellation without restarting ASR or relying on the aborted intake signal. */
+  private async persistCancelledTail(samples: Float32Array): Promise<void> {
+    const startMs = Math.round(this.consumed * 1000 / SAMPLE_RATE)
+    const endMs = Math.round((this.consumed + samples.length) * 1000 / SAMPLE_RATE)
+    try {
+      await this.ports.persist(encodeWav(samples), startMs, endMs, this.disk.signal)
+      this.consumed += samples.length
+      this.receipt.captured++
+      this.receipt.silent++ // deliberately not sent to ASR after cancellation
+    } catch (error) {
+      this.receipt.errors.push('Audio persistence at ' + startMs + 'ms: ' + String(error))
+      this.fatal = true
+      this.receipt.interrupted = true
+    }
   }
   /** Caller must await every push; overlapping pushes are explicitly rejected. */
   push(samples: Float32Array): Promise<void> {
@@ -148,8 +165,8 @@ export class ContinuousCapture {
       cursor += count
       if (this.pending.length === WINDOW) {
         const window = this.pending
-        this.pending = new Float32Array(0)
         await this.acceptWindow(window)
+        this.pending = new Float32Array(0)
       }
     }
   }
@@ -167,10 +184,11 @@ export class ContinuousCapture {
     try {
       await this.feeding?.catch(() => undefined)
       // Persist even a 1-sample tail. Short tails are excluded from ASR only.
-      if (this.pending.length && !this.signal.aborted) {
+      if (this.pending.length && !this.fatal) {
         const tail = this.pending
         this.pending = new Float32Array(0)
-        await this.acceptWindow(tail).catch(() => undefined)
+        if (this.signal.aborted) await this.persistCancelledTail(tail)
+        else await this.acceptWindow(tail).catch(() => undefined)
       }
       while (this.worker) await this.worker
       if (this.signal.aborted || this.fatal) this.receipt.interrupted = true
