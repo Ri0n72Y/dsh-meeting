@@ -2,6 +2,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { MeetingStore, sessionDirectoryName, workspaceMeetingRoot } from './store.js'
+import { SessionWorkspaceCache } from './cache.js'
 export type { MeetingLine, MeetingSnapshot } from './store.js'
 export { MeetingStore, sessionWorkspaceDirectory, workspaceMeetingRoot, sessionDirectoryName } from './store.js'
 
@@ -10,13 +11,10 @@ declare module '@deepseek-ai/cordis' {
 }
 export default class MeetingContext extends Service {
   static inject = ['tools', 'sessions']
-  private readonly stores = new Map<string, { session: object; store: MeetingStore }>()
+  private readonly stores = new SessionWorkspaceCache()
   constructor(ctx: Context) {
     super(ctx, 'meetingContext')
-    ctx.on('session/disposed', (session) => {
-      const entry = this.stores.get(session.header.id)
-      if (entry?.session === session) this.stores.delete(session.header.id)
-    })
+    ctx.on('session/disposed', session => { this.stores.release(session, session.header.id) })
     ctx.effect(() => () => { this.stores.clear() }, 'meeting-context: dispose stores')
     ctx.effect(() => ctx.tools.register(defineTool({
       name: 'meeting_status',
@@ -43,11 +41,7 @@ export default class MeetingContext extends Service {
     sessionDirectoryName(sessionId)
     const session = this.ctx.sessions.get(sessionId as SessionId)
     if (!session) throw new Error('Meeting requires a live DSH Session')
-    const cached = this.stores.get(sessionId)
-    if (cached?.session === session) return cached.store
-    // Cache entries are bound to the live Session object, not merely its opaque id.
-    const store = new MeetingStore(workspaceMeetingRoot(session.header.cwd))
-    this.stores.set(sessionId, { session, store })
-    return store
+    return this.stores.get(session, sessionId, () =>
+      new MeetingStore(workspaceMeetingRoot(session.header.cwd)))
   }
 }

@@ -83,7 +83,7 @@ export default class MeetingCapture extends Service {
       const owner = this.ctx.sessions.get(sessionId as SessionId)
       if (!owner) throw new Error('Meeting requires a live DSH Session')
       const store = this.ctx.meetingContext.storeFor(sessionId)
-      const dir = join(store.directory(sessionId), 'audio')
+      const dir = await store.prepareAudio(sessionId)
       const checkpoint = await audioCheckpoint(dir)
       const previous = await store.read(sessionId)
       if (previous?.phase === 'stopped') throw new Error('Meeting already stopped; create a new DSH Session')
@@ -105,6 +105,8 @@ export default class MeetingCapture extends Service {
       let index = checkpoint.nextIndex
       const capture = new ContinuousCapture({
         persist: async (wav, _startMs, _endMs, signal) => {
+          // The workspace may be reconfigured between windows; recheck before writes.
+          await store.prepareAudio(sessionId)
           await saveAudioWindow(dir, index, wav, signal)
           index++
         },

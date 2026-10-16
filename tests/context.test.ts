@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, mkdir, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MeetingStore, sessionDirectoryName, workspaceMeetingRoot } from '../packages/meeting-context/src/store.js'
+import { SessionWorkspaceCache } from '../packages/meeting-context/src/cache.js'
 
 test('Session-scoped journal survives service recreation and remains isolated', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'dsh-meeting-'))
@@ -69,4 +70,61 @@ test('DSH Session without cwd uses the Host workspace, never DSH_HOME', async ()
   const host = join(tmpdir(), 'host-session-root')
   assert.equal(workspaceMeetingRoot(undefined, host), join(host, '.dsh-meeting'))
   assert.equal(workspaceMeetingRoot(join(host, 'project'), host), join(host, 'project', '.dsh-meeting'))
+})
+
+test('pre-existing workspace ignore rules remain unchanged, audio stays Git-ignored', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'dsh-protect-'))
+  try {
+    const root = join(cwd, '.dsh-meeting')
+    await mkdir(root)
+    const authored = '# authored by user\n!private.txt\n'
+    await writeFile(join(root, '.gitignore'), authored)
+    const store = new MeetingStore(root)
+    await store.begin('alpha')
+    const audio = await store.prepareAudio('alpha')
+    assert.equal(await readFile(join(root, '.gitignore'), 'utf8'), authored)
+    assert.equal(await readFile(join(store.directory('alpha'), '.gitignore'), 'utf8'), '*\\n!/.gitignore\\n')
+    assert.equal(audio, join(store.directory('alpha'), 'audio'))
+  } finally { await rm(cwd, { recursive: true, force: true }) }
+})
+
+test('Session identity cache cannot reuse the prior Session workspace', () => {
+  const cache = new SessionWorkspaceCache()
+  const a = { id: 'same', cwd: '/workspace-A' }
+  const b = { id: 'same', cwd: '/workspace-B' }
+  const first = cache.get(a, a.id, () => new MeetingStore(join(a.cwd, '.dsh-meeting')))
+  const second = cache.get(b, b.id, () => new MeetingStore(join(b.cwd, '.dsh-meeting')))
+  assert.notEqual(first, second)
+  cache.release(a, a.id)
+  assert.equal(cache.get(b, b.id, () => { throw new Error('cache lost B') }), second)
+  cache.release(b, b.id)
+  assert.notEqual(cache.get(b, b.id, () => new MeetingStore('/again')), second)
+})
+
+test('reject .dsh-meeting symlink escaping workspace before any journal write', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'dsh-escape-'))
+  const outside = await mkdtemp(join(tmpdir(), 'dsh-outside-'))
+  try {
+    await symlink(outside, join(cwd, '.dsh-meeting'), 'dir')
+    const store = new MeetingStore(join(cwd, '.dsh-meeting'))
+    await assert.rejects(store.begin('alpha'), /escapes Session Workspace/)
+    await assert.rejects(store.read('alpha'), /escapes Session Workspace/)
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  }
+})
+
+test('reject Session audio directory symlink escaping workspace', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'dsh-audio-escape-'))
+  const outside = await mkdtemp(join(tmpdir(), 'dsh-outside-'))
+  try {
+    const store = new MeetingStore(join(cwd, '.dsh-meeting'))
+    await store.begin('alpha')
+    await symlink(outside, join(store.directory('alpha'), 'audio'), 'dir')
+    await assert.rejects(store.prepareAudio('alpha'), /escapes Session Workspace/)
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  }
 })

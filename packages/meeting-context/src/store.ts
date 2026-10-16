@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { sessionDirectoryName, secureMeetingDirectory, secureAudioDirectory, verifyMeetingFile } from './workspace.js'
 
 export type MeetingPhase = 'recording' | 'interrupted' | 'stopped'
 export interface SpeakerTurn { readonly startMs: number; readonly endMs: number; readonly speakerId: string | null }
@@ -20,21 +21,7 @@ export interface MeetingSnapshot {
 }
 
 /** Session IDs are opaque DSH strings, never trusted as filesystem segments. */
-export function sessionWorkspaceDirectory(sessionCwd: string | undefined, hostCwd = process.cwd()): string {
-  return sessionCwd ?? hostCwd
-}
-export function workspaceMeetingRoot(sessionCwd: string | undefined, hostCwd = process.cwd()): string {
-  return join(sessionWorkspaceDirectory(sessionCwd, hostCwd), '.dsh-meeting')
-}
-export function sessionDirectoryName(id: string): string {
-  if (typeof id !== 'string') throw new Error('Invalid DSH Session id')
-  return createHash('sha256').update(id).digest('hex')
-}
-/** Keep raw meeting audio out of "git add -A" in arbitrary Session workspaces. */
-export async function protectWorkspace(root: string): Promise<void> {
-  await mkdir(root, { recursive: true })
-  await writeFile(join(root, '.gitignore'), '*\n!/.gitignore\n')
-}
+export { sessionWorkspaceDirectory, workspaceMeetingRoot, sessionDirectoryName } from './workspace.js'
 function validateLine(item: MeetingLine): void {
   if (!Number.isSafeInteger(item.startMs) || !Number.isSafeInteger(item.endMs)
     || item.startMs < 0 || item.endMs <= item.startMs || item.text.trim() === ''
@@ -55,15 +42,18 @@ export class MeetingStore {
   private readonly queues = new Map<string, Promise<unknown>>()
   constructor(private readonly root: string) {}
   directory(id: string): string { return join(this.root, sessionDirectoryName(id)) }
-  private path(id: string): string { return join(this.directory(id), 'state.json') }
+  async prepareAudio(id: string): Promise<string> { return secureAudioDirectory(this.root, id) }
 
   async read(id: string): Promise<MeetingSnapshot | null> {
+    const dir = await secureMeetingDirectory(this.root, id, false)
+    if (!dir) return null
+    const path = join(dir, 'state.json')
+    await verifyMeetingFile(dir, path)
     try {
-      const snapshot = JSON.parse(await readFile(this.path(id), 'utf8')) as MeetingSnapshot
+      const snapshot = JSON.parse(await readFile(path, 'utf8')) as MeetingSnapshot
       if (snapshot.sessionId !== id) throw new Error('Mismatched persisted Session identity')
       return snapshot
-    }
-    catch (error) {
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw error
     }
@@ -72,9 +62,10 @@ export class MeetingStore {
     const prior = this.queues.get(id) ?? Promise.resolve()
     const task = prior.catch(() => undefined).then(async () => {
       const next = mutation(await this.read(id))
-      const path = this.path(id)
-      await protectWorkspace(this.root)
-      await mkdir(this.directory(id), { recursive: true })
+      const dir = await secureMeetingDirectory(this.root, id, true)
+      if (!dir) throw new Error('Cannot create meeting directory')
+      const path = join(dir, 'state.json')
+      await verifyMeetingFile(dir, path)
       const temporary = path + '.' + randomUUID() + '.tmp'
       try {
         await writeFile(temporary, JSON.stringify(next, null, 2) + '\n', { flag: 'wx' })
