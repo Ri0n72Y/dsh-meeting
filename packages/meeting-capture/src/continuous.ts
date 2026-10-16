@@ -134,7 +134,8 @@ export class ContinuousCapture {
       await this.ports.persist(encodeWav(samples), startMs, endMs, this.disk.signal)
       this.consumed += samples.length
       this.receipt.captured++
-      this.receipt.silent++ // deliberately not sent to ASR after cancellation
+      // Cancellation suppresses ASR, but does not make voiced PCM silent.
+      if (!audible(samples)) this.receipt.silent++
     } catch (error) {
       this.receipt.errors.push('Audio persistence at ' + startMs + 'ms: ' + String(error))
       this.fatal = true

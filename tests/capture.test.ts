@@ -146,8 +146,26 @@ test('Session disposal keeps every accepted 1s and 4.9s buffered tail', async ()
     const receipt = await capture.stop()
     assert.deepEqual(stored, [size])
     assert.equal(receipt.captured, 1)
+    assert.equal(receipt.silent, 0)
+    assert.equal(receipt.processed, 0)
     assert.equal(receipt.interrupted, true)
   }
+})
+
+test('cancelled genuinely silent PCM is still counted as silence', async () => {
+  const stored: number[] = []
+  const capture = new ContinuousCapture({
+    async persist(wav) { stored.push(decodeWav(wav).length) },
+    async process() { throw new Error('Cancelled tail must not start ASR') },
+  })
+  await capture.push(new Float32Array(SAMPLE_RATE))
+  capture.cancel(new Error('session/disposed'))
+  const receipt = await capture.stop()
+  assert.deepEqual(stored, [SAMPLE_RATE])
+  assert.equal(receipt.captured, 1)
+  assert.equal(receipt.silent, 1)
+  assert.equal(receipt.processed, 0)
+  assert.equal(receipt.interrupted, true)
 })
 
 test('cancel while queued behind slow ASR flushes a complete waiting PCM window', async () => {
