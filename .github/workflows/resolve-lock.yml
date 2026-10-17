@@ -1,0 +1,29 @@
+name: Resolve Issue 7 Dependencies
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  lock:
+    if: github.head_ref == 'feat/issue7-meeting-sidebar'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --no-frozen-lockfile --lockfile-only
+      - name: Commit lockfile if changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- pnpm-lock.yaml; then exit 0; fi
+          git add pnpm-lock.yaml
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'build: sync UI dependencies'
+          git push origin HEAD:feat/issue7-meeting-sidebar

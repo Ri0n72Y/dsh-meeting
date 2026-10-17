@@ -39,7 +39,7 @@ export default class MeetingControl extends TypertRemoteService {
 
   @Remote
   async snapshot(sessionId: string): Promise<MeetingView> {
-    const liveSession = this.ctx.sessions.get(sessionId)
+    const liveSession = this.ctx.sessions.get(sessionId as SessionId)
     if (!liveSession) throw new Error('Meeting requires a live DSH Session')
     const store = this.ctx.meetingContext.storeFor(sessionId)
     const state = await store.read(sessionId)
