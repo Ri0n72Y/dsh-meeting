@@ -79,6 +79,11 @@ jobs:
           node-version: 24
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
+      - name: Diagnose actual built Host plugin ESM entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e "await import('./packages/meeting-ui/dist/index.js'); console.log('MEETING_HOST_ESM_IMPORT_PASS')"
       - name: Install Meeting Profile via real DSH CLI
         shell: bash
         run: |
