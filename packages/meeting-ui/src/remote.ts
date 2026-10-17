@@ -10,6 +10,7 @@ export interface MeetingView {
   transcript: number
   revision: number
   summary: string
+  transcriptText: string
   summaryUpdatedAt?: number
   nextSummaryAt?: number
   summaryBusy: boolean

@@ -54,7 +54,12 @@ export class WindowsLoopback {
           this.pending += samples.length
           if (this.pending > 16_000 * 3) throw new Error('WASAPI delivery exceeded 3 seconds of buffered audio')
           this.queued.push(samples)
-          if (!this.draining) this.draining = this.drain().finally(() => { this.draining = null })
+          if (!this.draining) this.draining = this.drain().finally(() => {
+            this.draining = null
+            if (this.queued.length && !this.stopped && !this.error) {
+              this.draining = this.drain().finally(() => { this.draining = null })
+            }
+          })
         } catch (cause) { this.fail(cause) }
       })
     } catch (error) {

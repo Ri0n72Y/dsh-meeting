@@ -15,7 +15,7 @@ export interface MeetingClientRemote {
   summarize(id: string): Promise<RemoteResult<MeetingView>>
   watch(id: string, signal: AbortSignal): AsyncIterable<RemoteResult<MeetingView>>
 }
-export const inject = ['slots', 'sidebarRightTabs', 'remote', 'remote.meeting']
+export const inject = ['slots', 'sidebarRightTabs', 'remote']
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.remote.$mount(contribution), 'meeting-ui: typed Remote')
   ctx.effect(() => ctx.sidebarRightTabs.register({

@@ -44,6 +44,24 @@ export class MeetingStore {
   constructor(private readonly root: string) {}
   directory(id: string): string { return join(this.root, sessionDirectoryName(id)) }
   async prepareAudio(id: string): Promise<string> { return secureAudioDirectory(this.root, id) }
+  async readDocument(id: string, filename: 'transcript.md' | 'summary.md'): Promise<string> {
+    const dir = await secureMeetingDirectory(this.root, id, false)
+    if (!dir) return ''
+    const path = join(dir, filename)
+    await verifyMeetingFile(dir, path)
+    try { return await readFile(path, 'utf8') }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
+      throw error
+    }
+  }
+  async saveSummary(id: string, markdown: string): Promise<void> {
+    const dir = await secureMeetingDirectory(this.root, id, true)
+    if (!dir) throw new Error('Meeting directory not available')
+    await verifyMeetingFile(dir, join(dir, 'summary.md'))
+    await writeMeetingDocument(dir, 'summary.md', markdown)
+  }
+
 
   async read(id: string): Promise<MeetingSnapshot | null> {
     const dir = await secureMeetingDirectory(this.root, id, false)

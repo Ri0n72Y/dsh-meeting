@@ -42,5 +42,8 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "optionalDependencies": {
+    "loopback-capture": "3.0.2"
   }
 }

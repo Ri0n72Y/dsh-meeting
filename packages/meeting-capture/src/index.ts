@@ -16,6 +16,7 @@ export { ContinuousCapture } from './continuous.js'
 export type { CapturedLine, CaptureReceipt, CapturePorts, SpeakerTurn, CaptureOptions } from './continuous.js'
 export { decodeWav, encodeWav, SAMPLE_RATE } from './wav.js'
 export { audioCheckpoint, saveAudioWindow } from './audio-files.js'
+export { WindowsLoopback, downmix48k } from './windows-loopback.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { meetingCapture: MeetingCapture }

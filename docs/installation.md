@@ -17,6 +17,7 @@ pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/mee
 pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-speaker
 pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
 pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-capture
+pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-ui
 ```
 
 - **Context** works with Tools + Sessions and has no recording dependency.
@@ -46,3 +47,6 @@ The mapping hashes the opaque DSH Session ID for safe cross-platform file paths;
 If `Session.header.cwd` is absent, the fallback Workspace is the Host process's current working directory, as in the DSH no-cwd shell default. This is still a Workspace, **never DSH_HOME**.
 
 Workspace confinement is checked against canonical filesystem paths. Existing symlinks that lead the meeting root, Session directory, audio directory, or state file outside the selected Session Workspace are rejected rather than silently followed. There is no migration of recordings into DSH_HOME.
+
+## Meeting Sidebar P0
+The new Meeting tab is contributed through DSH's official right Sidebar Slot. Its Start/Stop controls capture Windows x64 **system playback** using `loopback-capture@3.0.2` WASAPI, not a browser microphone. Markdown transcript and summary remain inside the Session Workspace. Auto summary defaults to 15 minutes and uses the live Session's own LLM route only when its Agent is idle. Native Windows verification remains required.

@@ -1,15 +1,14 @@
 /** Host-facing meeting controls; the Sidebar never owns Windows device resources. */
-import { readFile } from 'node:fs/promises'
-import { Service, type Context } from '@deepseek-ai/cordis'
+import { type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@ri0n72y/dsh-meeting-context'
 import { WindowsLoopback } from '@ri0n72y/dsh-meeting-capture'
 import type {} from '@ri0n72y/dsh-meeting-capture'
 import { contribution, type MeetingView } from './remote.js'
-import { writeMeetingDocument } from '../../meeting-context/src/markdown.js'
 
 declare module '@deepseek-ai/cordis' { interface Context { meetingControl: MeetingControl } }
 
@@ -21,6 +20,7 @@ export default class MeetingControl extends TypertRemoteService {
   static Config = z.object({ summaryIntervalMs: z.number().min(1_000).default(900_000) })
   private readonly live = new Map<string, LiveRecording>()
   private readonly summaries = new Map<string, Promise<void>>()
+  private starting = false
   private readonly state = new Map<string, { updatedAt?: number; nextAt?: number; error?: string; deferred?: boolean; busy?: boolean }>()
 
   constructor(ctx: Context, private readonly config: Config) {
@@ -36,17 +36,15 @@ export default class MeetingControl extends TypertRemoteService {
     if (!liveSession) throw new Error('Meeting requires a live DSH Session')
     const store = this.ctx.meetingContext.storeFor(sessionId)
     const state = await store.read(sessionId)
-    const summary = await readFile(store.directory(sessionId) + '/summary.md', 'utf8').catch(error => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
-      throw error
-    })
+    const [summary, transcriptText] = await Promise.all([
+      store.readDocument(sessionId, 'summary.md'), store.readDocument(sessionId, 'transcript.md')])
     const options = this.state.get(sessionId)
     return { sessionId, phase: state?.phase ?? 'ready',
       recording: this.live.has(sessionId),
       startedAt: this.live.get(sessionId)?.startedAt,
       transcript: state?.segments.length ?? 0,
       revision: state?.revision ?? 0,
-      summary, summaryUpdatedAt: options?.updatedAt, nextSummaryAt: options?.nextAt,
+      summary, transcriptText, summaryUpdatedAt: options?.updatedAt, nextSummaryAt: options?.nextAt,
       summaryBusy: options?.busy ?? false, summaryDeferred: options?.deferred ?? false,
       error: options?.error ?? state?.interruption }
   }
@@ -59,17 +57,21 @@ export default class MeetingControl extends TypertRemoteService {
       const encoded = JSON.stringify(frame)
       if (encoded !== previous) { previous = encoded; yield frame }
       await new Promise<void>(resolve => {
-        const timer = setTimeout(resolve, 1000)
-        signal.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+        const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve() }
+        const timer = setTimeout(done, 1000)
+        signal.addEventListener('abort', done, { once: true })
       })
     }
   }
 
   @Remote
   async start(sessionId: string): Promise<MeetingView> {
-    if (this.live.size > 0) throw new Error('System playback audio is already recording in another Session')
+    if (this.live.size > 0 || this.starting) throw new Error('System playback audio is already recording in another Session')
+    this.starting = true
     if (this.live.has(sessionId)) throw new Error('Meeting is already recording')
-    const capture = await this.ctx.meetingCapture.start(sessionId)
+    let capture: Awaited<ReturnType<typeof this.ctx.meetingCapture.start>>
+    try { capture = await this.ctx.meetingCapture.start(sessionId) }
+    catch (error) { this.starting = false; throw error }
     const source = new WindowsLoopback(
       samples => this.ctx.meetingCapture.push(sessionId, samples),
       error => { this.state.set(sessionId, { ...this.state.get(sessionId), error: error.message });
@@ -78,6 +80,7 @@ export default class MeetingControl extends TypertRemoteService {
     try { source.start() } catch (error) {
       capture.cancel(error)
       await this.ctx.meetingCapture.stop(sessionId)
+      this.starting = false
       throw error
     }
     const startedAt = Date.now()
@@ -85,6 +88,7 @@ export default class MeetingControl extends TypertRemoteService {
       this.state.set(sessionId, { ...this.state.get(sessionId), error: String(error) })
     }) }, 10_000)
     this.live.set(sessionId, { source, startedAt, timer })
+    this.starting = false
     this.state.set(sessionId, { nextAt: startedAt + this.config.summaryIntervalMs })
     return this.snapshot(sessionId)
   }
@@ -131,7 +135,7 @@ export default class MeetingControl extends TypertRemoteService {
 
   private async generate(sessionId: string, final: boolean, manual: boolean): Promise<void> {
     const before = this.state.get(sessionId) ?? {}
-    const agent = this.ctx.agents.get(sessionId as Parameters<typeof this.ctx.agents.get>[0])
+    const agent = this.ctx.agents.get(sessionId as SessionId)
     if (!agent || agent.status !== 'idle') {
       this.state.set(sessionId, { ...before, deferred: true,
         error: agent ? 'Session Agent 正忙，已延后总结' : 'Session Agent 尚未就绪' })
@@ -144,7 +148,7 @@ export default class MeetingControl extends TypertRemoteService {
         nextAt: Date.now() + this.config.summaryIntervalMs })
       return
     }
-    const previous = await readFile(store.directory(sessionId) + '/summary.md', 'utf8').catch(() => '')
+    const previous = await store.readDocument(sessionId, 'summary.md')
     const covered = Number(previous.match(/<!-- meeting-covered: (\d+) -->/)?.[1] ?? 0)
     if (!manual && !final && covered >= snapshot.segments.length) {
       this.state.set(sessionId, { ...before, nextAt: Date.now() + this.config.summaryIntervalMs, deferred: false })
@@ -184,7 +188,7 @@ export default class MeetingControl extends TypertRemoteService {
       if (!result) throw new Error('模型未生成总结内容')
       const body = '<!-- meeting-covered: ' + snapshot.segments.length + ' -->\n'
         + '# 会议总结\n\n' + result + '\n'
-      await writeMeetingDocument(store.directory(sessionId), 'summary.md', body)
+      await store.saveSummary(sessionId, body)
       const now = Date.now()
       this.state.set(sessionId, { updatedAt: now,
         nextAt: now + this.config.summaryIntervalMs, busy: false, deferred: false })
