@@ -125,7 +125,9 @@ export default class MeetingControl extends TypertRemoteService {
 
   async prepare(sessionId: string): Promise<MeetingView> {
     if (!this.ctx.sessions.get(sessionId as SessionId)) throw new Error('Meeting Session is unavailable')
-    this.ctx.speechToText.prepare('sensevoice-local')
+    const provider = this.ctx.speechToText.snapshot().providers.find(p => p.id === 'sensevoice-local')
+    if (!provider) throw new Error('本地 SenseVoice 尚未安装')
+    this.ctx.speechToText.prepare(provider.id)
     return this.snapshot(sessionId)
   }
 
