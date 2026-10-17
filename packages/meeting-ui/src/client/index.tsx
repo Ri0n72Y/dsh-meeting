@@ -6,14 +6,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { MeetingBody } from './MeetingBody.js'
 import { contribution } from '../remote.js'
 import type { MeetingView } from '../remote.js'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult, RemoteStreamHandle } from '@deepseek-ai/dsh-typert-protocol'
 
 export interface MeetingClientRemote {
   snapshot(id: string): Promise<RemoteResult<MeetingView>>
   start(id: string): Promise<RemoteResult<MeetingView>>
   stop(id: string): Promise<RemoteResult<MeetingView>>
   summarize(id: string): Promise<RemoteResult<MeetingView>>
-  watch(id: string, signal: AbortSignal): AsyncIterable<RemoteResult<MeetingView>>
+  watch(id: string, signal: AbortSignal): RemoteStreamHandle<MeetingView, never>
 }
 declare module '@deepseek-ai/cordis' {
   interface Context { 'remote.meeting': MeetingClientRemote }
