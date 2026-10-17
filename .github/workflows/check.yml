@@ -39,9 +39,101 @@ jobs:
           run_cli plugin --profile meeting-ci add ./packages/meeting-speaker
           run_cli plugin --profile meeting-ci add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
           run_cli plugin --profile meeting-ci add ./packages/meeting-capture
+          run_cli plugin --profile meeting-ci add ./packages/meeting-ui
           echo "::notice::All four DSH installs complete; now dumping profile configuration"
           run_cli --profile meeting-ci --dump-config > "$RUNNER_TEMP/meeting-composed.yml"
           echo "::notice::DSH profile configuration returned successfully"
-          for id in meeting-context meeting-speaker meeting-capture speech-to-text speech-to-text-sensevoice; do
+          for id in meeting-context meeting-speaker meeting-capture speech-to-text speech-to-text-sensevoice meeting-control; do
             grep -Fq "id: $id" "$RUNNER_TEMP/meeting-composed.yml"
           done
+
+  windows-addon:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Load genuine Windows WASAPI native binding
+        shell: pwsh
+        run: |
+          pnpm --dir packages/meeting-capture exec node -e "const addon = require('loopback-capture'); const capture = new addon.LoopbackCapture(); if (typeof capture.startSystemAudio !== 'function' || typeof capture.stop !== 'function') process.exit(1); console.log('WINDOWS_WASAPI_ADDON_LOAD_PASS')"
+
+  web-profile-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DSH_HOME: ${{ github.workspace }}/.meeting-profile-runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Diagnose actual built Host plugin ESM entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e "await import('./packages/meeting-ui/dist/index.js'); console.log('MEETING_HOST_ESM_IMPORT_PASS')"
+      - name: Install Meeting Profile via real DSH CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cli=(pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2)
+          run_cli() { timeout --signal=TERM --kill-after=5s 70s "${cli[@]}" "$@"; }
+          run_cli --profile meeting-runtime --from-default-profile web --dump-default-config > /dev/null
+          run_cli plugin --profile meeting-runtime add ./packages/meeting-context
+          run_cli plugin --profile meeting-runtime add ./packages/meeting-speaker
+          run_cli plugin --profile meeting-runtime add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
+          run_cli plugin --profile meeting-runtime add ./packages/meeting-capture
+          run_cli plugin --profile meeting-runtime add ./packages/meeting-ui
+      - name: Boot the actual DSH Web server and inspect client plugin graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          port=35409
+          timeout --signal=TERM --kill-after=5s 65s pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 --profile meeting-runtime --no-open --port "$port" > "$RUNNER_TEMP/meeting-web.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 50); do
+            if curl --silent --show-error --max-time 2 "http://127.0.0.1:$port/" > "$RUNNER_TEMP/meeting-index.html" 2>/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then
+            echo "::error::DSH Web did not serve the shell HTML"
+            tail -n 130 "$RUNNER_TEMP/meeting-web.log"
+            exit 1
+          fi
+          echo "DSH_WEB_HTTP_PASS"
+          # DSH's boot graph is part of the authenticated HTML, not the unauthenticated shell.
+          auth_url=$(grep -Eo 'http://127[.]0[.]0[.]1:[0-9]+/[?]token=[A-Za-z0-9_-]+' "$RUNNER_TEMP/meeting-web.log" | tail -n 1)
+          if [ -z "$auth_url" ]; then
+            echo "::error::DSH did not print an authenticated Web URL"
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --max-time 10 \
+            --cookie-jar "$RUNNER_TEMP/meeting-cookie.txt" \
+            "$auth_url" > "$RUNNER_TEMP/meeting-index.html"
+          if grep -Fq "@ri0n72y/dsh-meeting-ui" "$RUNNER_TEMP/meeting-index.html"; then
+            echo "MEETING_UI_CLIENT_MANIFEST_PASS"
+          else
+            echo "::error::DSH Client manifest does not include Meeting UI"
+            echo "Authenticated HTML bytes: $(wc -c < "$RUNNER_TEMP/meeting-index.html")"
+            echo "Client boot marker count: $(grep -o '__DSH_BOOT__' "$RUNNER_TEMP/meeting-index.html" | wc -l)"
+            tail -n 40 "$RUNNER_TEMP/meeting-web.log" | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[REDACTED]/g'
+            exit 1
+          fi
