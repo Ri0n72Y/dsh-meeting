@@ -4,7 +4,7 @@ import z from '@deepseek-ai/schemastery'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@ri0n72y/dsh-meeting-context'
 import { WindowsLoopback } from '@ri0n72y/dsh-meeting-capture'
 import type {} from '@ri0n72y/dsh-meeting-capture'
@@ -37,7 +37,6 @@ export default class MeetingControl extends TypertRemoteService {
     }, 'meeting-control: release WASAPI')
   }
 
-  @Remote
   async snapshot(sessionId: string): Promise<MeetingView> {
     const liveSession = this.ctx.sessions.get(sessionId as SessionId)
     if (!liveSession) throw new Error('Meeting requires a live DSH Session')
@@ -56,7 +55,6 @@ export default class MeetingControl extends TypertRemoteService {
       error: options?.error ?? state?.interruption }
   }
 
-  @Remote({ mode: 'stream' })
   async *watch(sessionId: string, signal: AbortSignal): AsyncIterable<MeetingView> {
     let previous = ''
     while (!signal.aborted) {
@@ -71,7 +69,6 @@ export default class MeetingControl extends TypertRemoteService {
     }
   }
 
-  @Remote
   async start(sessionId: string): Promise<MeetingView> {
     if (this.live.size > 0 || this.starting) throw new Error('System playback audio is already recording in another Session')
     this.starting = true
@@ -112,7 +109,6 @@ export default class MeetingControl extends TypertRemoteService {
     } finally { this.live.delete(sessionId) }
   }
 
-  @Remote
   async stop(sessionId: string): Promise<MeetingView> {
     if (!this.live.has(sessionId)) throw new Error('Meeting is not recording')
     await this.close(sessionId)
@@ -121,7 +117,6 @@ export default class MeetingControl extends TypertRemoteService {
     return this.snapshot(sessionId)
   }
 
-  @Remote
   async summarize(sessionId: string): Promise<MeetingView> {
     await this.makeSummary(sessionId, false, true)
     return this.snapshot(sessionId)
