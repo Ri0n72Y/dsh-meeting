@@ -1,0 +1,6 @@
+packages:
+  - packages/*
+  - bundles/*
+
+allowBuilds:
+  esbuild: true

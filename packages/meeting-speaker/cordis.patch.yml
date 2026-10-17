@@ -1,0 +1,6 @@
+- insert:
+    - id: meeting-speaker
+      name: '@ri0n72y/dsh-meeting-speaker'
+      config:
+        modelPath: ''
+        segmentationModelPath: ''
