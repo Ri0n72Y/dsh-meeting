@@ -119,10 +119,21 @@ jobs:
             exit 1
           fi
           echo "DSH_WEB_HTTP_PASS"
+          # DSH's boot graph is part of the authenticated HTML, not the unauthenticated shell.
+          auth_url=$(grep -Eo 'http://127[.]0[.]0[.]1:[0-9]+/[?]token=[A-Za-z0-9_-]+' "$RUNNER_TEMP/meeting-web.log" | tail -n 1)
+          if [ -z "$auth_url" ]; then
+            echo "::error::DSH did not print an authenticated Web URL"
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --max-time 10 \
+            --cookie-jar "$RUNNER_TEMP/meeting-cookie.txt" \
+            "$auth_url" > "$RUNNER_TEMP/meeting-index.html"
           if grep -Fq "@ri0n72y/dsh-meeting-ui" "$RUNNER_TEMP/meeting-index.html"; then
             echo "MEETING_UI_CLIENT_MANIFEST_PASS"
           else
             echo "::error::DSH Client manifest does not include Meeting UI"
-            tail -n 90 "$RUNNER_TEMP/meeting-web.log"
+            echo "Authenticated HTML bytes: $(wc -c < "$RUNNER_TEMP/meeting-index.html")"
+            echo "Client boot marker count: $(grep -o '__DSH_BOOT__' "$RUNNER_TEMP/meeting-index.html" | wc -l)"
+            tail -n 40 "$RUNNER_TEMP/meeting-web.log" | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[REDACTED]/g'
             exit 1
           fi
