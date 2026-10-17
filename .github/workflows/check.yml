@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
-      DSH_HOME: ${{ runner.temp }}/meeting-profile-runtime
+      DSH_HOME: ${{ github.workspace }}/.meeting-profile-runtime
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
