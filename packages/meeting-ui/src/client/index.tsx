@@ -1,4 +1,4 @@
-/** Official DSH Sidebar type and keyed body; no independent window or visual framework. */
+/** Official right Sidebar extension: mount Remote before dependent tabs. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -15,18 +15,34 @@ export interface MeetingClientRemote {
   summarize(id: string): Promise<RemoteResult<MeetingView>>
   watch(id: string, signal: AbortSignal): AsyncIterable<RemoteResult<MeetingView>>
 }
-export const inject = ['slots', 'sidebarRightTabs', 'remote']
-export function apply(ctx: Context): void {
-  ctx.effect(() => ctx.remote.$mount(contribution), 'meeting-ui: typed Remote')
+declare module '@deepseek-ai/cordis' {
+  interface Context { 'remote.meeting': MeetingClientRemote }
+}
+export const inject = ['remote', 'slots', 'sidebarRightTabs']
+
+function registerUi(ctx: Context): void {
   ctx.effect(() => ctx.sidebarRightTabs.register({
     id: '@ri0n72y/dsh-meeting-ui', kind: 'meeting', priority: 'extension',
     title: () => '会议',
     guide: [{ id: 'meeting', order: 30, title: () => '会议录音',
       description: () => '录制系统声音，实时查看原文与会议总结' }],
   }), 'meeting-ui: Sidebar tab')
-  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () =>
+  ctx.slots.inject('sidebar.right.pane.tab', () =>
     ctx.slots.register({
       name: 'sidebar.right.pane.tab', key: '@ri0n72y/dsh-meeting-ui',
       inject: () => ({ meetingRemote: (ctx.remote as unknown as { meeting: MeetingClientRemote }).meeting }),
-    }, MeetingBody)), 'meeting-ui: Sidebar body')
+    }, MeetingBody))
+}
+
+/** Same two-step lifecycle as official DSH Voice Input client plugin. */
+export async function apply(ctx: Context): Promise<() => Promise<void>> {
+  const disposeRemote = await ctx.remote.$mount(contribution)
+  const ui = ctx.inject(['remote.meeting', 'slots', 'sidebarRightTabs'], registerUi)
+  try { await ui }
+  catch (error) {
+    await ui.dispose()
+    await disposeRemote()
+    throw error
+  }
+  return async () => { await ui.dispose(); await disposeRemote() }
 }
