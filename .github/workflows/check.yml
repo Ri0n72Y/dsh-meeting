@@ -44,3 +44,38 @@ jobs:
           for id in meeting-context meeting-speaker meeting-capture speech-to-text speech-to-text-sensevoice; do
             grep -Fq "id: $id" "$RUNNER_TEMP/meeting-composed.yml"
           done
+  pnpm-upgrade-comparison:
+    name: Newer pnpm 11.28.5 diagnostic
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Run equivalent DSH profile install sequence on newer pnpm
+        run: |
+          set -euo pipefail
+          pnpm --version
+          run_cli() {
+            node scripts/diagnose-dsh-cli.mjs "$@"
+          }
+          for trial in 1 2 3; do
+            echo "::group::Newer pnpm DSH smoke trial $trial"
+            export DSH_HOME="$RUNNER_TEMP/dsh-profile-new-pnpm-$trial"
+            run_cli --profile meeting-ci --from-default-profile web --dump-default-config > "$RUNNER_TEMP/base-$trial.yml"
+            run_cli plugin --profile meeting-ci add ./packages/meeting-context
+            run_cli plugin --profile meeting-ci add ./packages/meeting-speaker
+            run_cli plugin --profile meeting-ci add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
+            run_cli plugin --profile meeting-ci add ./packages/meeting-capture
+            run_cli --profile meeting-ci --dump-config > "$RUNNER_TEMP/composed-$trial.yml"
+            for id in meeting-context meeting-speaker meeting-capture speech-to-text speech-to-text-sensevoice; do
+              grep -Fq "id: $id" "$RUNNER_TEMP/composed-$trial.yml"
+            done
+            echo "::endgroup::"
+          done
