@@ -50,6 +50,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Set pnpm version in this job's temporary checkout only
+        run: |
+          node -e "const fs = require('node:fs'); const file = 'package.json'; const pkg = JSON.parse(fs.readFileSync(file, 'utf8')); pkg.packageManager = 'pnpm@11.28.5'; fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\\n')"
       - uses: pnpm/action-setup@v4
         with:
           version: 11.28.5
