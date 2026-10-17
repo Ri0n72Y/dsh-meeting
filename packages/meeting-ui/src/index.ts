@@ -21,13 +21,20 @@ export default class MeetingControl extends TypertRemoteService {
   private readonly live = new Map<string, LiveRecording>()
   private readonly summaries = new Map<string, Promise<void>>()
   private starting = false
+  private readonly finalTimers = new Map<string, ReturnType<typeof setInterval>>()
   private readonly state = new Map<string, { updatedAt?: number; nextAt?: number; error?: string; deferred?: boolean; busy?: boolean }>()
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'meetingControl', { namespace: 'meeting' })
     ctx.effect(() => ctx.typert.remotes.register(contribution), 'meeting-control Remote contracts')
-    ctx.on('session/disposed', session => { void this.close(session.header.id).catch(error => ctx.logger('meeting-control').warn(String(error))) })
-    ctx.effect(() => async () => { await Promise.allSettled([...this.live.keys()].map(id => this.close(id))) }, 'meeting-control: release WASAPI')
+    ctx.on('session/disposed', session => {
+      this.clearFinalTimer(session.header.id)
+      void this.close(session.header.id).catch(error => ctx.logger('meeting-control').warn(String(error)))
+    })
+    ctx.effect(() => async () => {
+      for (const id of this.finalTimers.keys()) this.clearFinalTimer(id)
+      await Promise.allSettled([...this.live.keys()].map(id => this.close(id)))
+    }, 'meeting-control: release WASAPI')
   }
 
   @Remote
@@ -110,6 +117,7 @@ export default class MeetingControl extends TypertRemoteService {
     if (!this.live.has(sessionId)) throw new Error('Meeting is not recording')
     await this.close(sessionId)
     await this.makeSummary(sessionId, true)
+    if (this.state.get(sessionId)?.deferred) this.deferFinal(sessionId)
     return this.snapshot(sessionId)
   }
 
@@ -119,6 +127,25 @@ export default class MeetingControl extends TypertRemoteService {
     return this.snapshot(sessionId)
   }
 
+  private clearFinalTimer(id: string): void {
+    const timer = this.finalTimers.get(id)
+    if (timer) clearInterval(timer)
+    this.finalTimers.delete(id)
+  }
+  /** Persist the final-summary intent while the Session Agent owns a normal turn. */
+  private deferFinal(id: string): void {
+    if (this.finalTimers.has(id)) return
+    const timer = setInterval(() => {
+      if (!this.ctx.sessions.get(id as SessionId)) { this.clearFinalTimer(id); return }
+      if (!this.state.get(id)?.deferred) { this.clearFinalTimer(id); return }
+      void this.makeSummary(id, true).then(() => {
+        if (!this.state.get(id)?.deferred) this.clearFinalTimer(id)
+      }).catch(error => {
+        this.state.set(id, { ...this.state.get(id), error: String(error), deferred: true })
+      })
+    }, 10_000)
+    this.finalTimers.set(id, timer)
+  }
   private async tick(sessionId: string): Promise<void> {
     const state = this.state.get(sessionId)
     if (!this.live.has(sessionId) || !state) return
@@ -127,7 +154,11 @@ export default class MeetingControl extends TypertRemoteService {
   }
 
   private async makeSummary(sessionId: string, final: boolean, manual = false): Promise<void> {
-    if (this.summaries.has(sessionId)) { await this.summaries.get(sessionId); return }
+    if (this.summaries.has(sessionId)) {
+      await this.summaries.get(sessionId)
+      if (!final) return
+      // A regular checkpoint cannot satisfy the explicit final-summary intent.
+    }
     const task = this.generate(sessionId, final, manual)
     this.summaries.set(sessionId, task)
     try { await task } finally { this.summaries.delete(sessionId) }

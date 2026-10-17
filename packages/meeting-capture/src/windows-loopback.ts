@@ -34,6 +34,7 @@ export class WindowsLoopback {
   private error: Error | undefined
   private stopped = false
   private samples = 0
+  private carry = Buffer.alloc(0)
   constructor(private readonly push: (samples: Float32Array) => Promise<void>,
     private readonly onError: (error: Error) => void) {}
 
@@ -49,8 +50,12 @@ export class WindowsLoopback {
       this.native.startSystemAudio((bytes) => {
         if (this.stopped || this.error) return
         try {
-          const samples = downmix48k(bytes)
-          if (samples.length === 0) return
+          // Native WASAPI chunks need not end on a 3-stereo-frame boundary.
+          const joined = this.carry.length ? Buffer.concat([this.carry, bytes]) : Buffer.from(bytes)
+          const whole = Math.floor(joined.length / 12) * 12
+          this.carry = Buffer.from(joined.subarray(whole))
+          if (!whole) return
+          const samples = downmix48k(joined.subarray(0, whole))
           this.pending += samples.length
           if (this.pending > 16_000 * 3) throw new Error('WASAPI delivery exceeded 3 seconds of buffered audio')
           this.queued.push(samples)
@@ -93,6 +98,12 @@ export class WindowsLoopback {
     // Native callback is stopped; finish queued work without dropping tail.
     while (this.draining) await this.draining
     this.stopped = true
+    if (this.carry.length && !this.error) {
+      const padded = Buffer.alloc(12)
+      this.carry.copy(padded)
+      this.queued.push(downmix48k(padded))
+      this.carry = Buffer.alloc(0)
+    }
     const remaining = this.queued.splice(0)
     for (const block of remaining) {
       if (this.error) break
