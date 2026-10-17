@@ -162,11 +162,15 @@ export default class MeetingControl extends TypertRemoteService {
   private async generate(sessionId: string, final: boolean, manual: boolean): Promise<void> {
     const before = this.state.get(sessionId) ?? {}
     const agent = this.ctx.agents.get(sessionId as SessionId)
-    if (!agent || agent.status !== 'idle') {
+    // A meeting may start before the first chat turn creates its Agent.
+    // Busy Agents defer summarization; absent Agents use DSH's selected default model.
+    if (agent !== undefined && agent.status !== 'idle') {
       this.state.set(sessionId, { ...before, deferred: true,
-        error: agent ? 'Session Agent 正忙，已延后总结' : 'Session Agent 尚未就绪' })
+        error: 'Session Agent 正忙，已延后总结' })
       return
     }
+    const session = this.ctx.sessions.get(sessionId as SessionId)
+    if (!session) throw new Error('Meeting Session is no longer available')
     const store = this.ctx.meetingContext.storeFor(sessionId)
     const snapshot = await store.read(sessionId)
     if (!snapshot?.segments.length) {
@@ -180,9 +184,10 @@ export default class MeetingControl extends TypertRemoteService {
       this.state.set(sessionId, { ...before, nextAt: Date.now() + this.config.summaryIntervalMs, deferred: false })
       return
     }
-    const route = agent.session.requestHeader()?.config
-    const provider = route?.provider ?? agent.options.provider
-    const model = route?.model ?? agent.options.model
+    const route = session.requestHeader()?.config
+    const defaults = this.ctx.get('agentDefaultModel')?.currentSelection()
+    const provider = route?.provider ?? agent?.options.provider ?? defaults?.provider
+    const model = route?.model ?? agent?.options.model ?? defaults?.model
     if (!provider || !model) {
       this.state.set(sessionId, { ...before, error: '无法确定当前 Session 的 LLM 模型', deferred: true })
       return
@@ -206,7 +211,7 @@ export default class MeetingControl extends TypertRemoteService {
         provider, model, system: '请严格保持内容来源准确，输出可读 Markdown；不要调用工具。',
         messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
         maxTokens: 2048,
-        sessionId: agent.session.id,
+        sessionId: session.id,
       })) assembler.push(chunk)
       if (assembler.finish.kind !== 'stop') throw new Error('总结模型未正常完成：' + assembler.finish.kind)
       const result = assembler.blocks().filter(block => block.type === 'text')
