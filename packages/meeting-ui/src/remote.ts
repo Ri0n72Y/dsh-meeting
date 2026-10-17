@@ -10,6 +10,7 @@ export interface MeetingView {
   transcript: number
   revision: number
   summary: string
+  recognizerPhase: string
   transcriptText: string
   summaryUpdatedAt?: number
   nextSummaryAt?: number
@@ -20,7 +21,7 @@ export interface MeetingView {
 const codec = { mode: 'src-json' } as const
 const param = (name: string) => ({ name, wire: name, source: 'json' as const, codec })
 const methods: readonly InvocationDescriptor[] = [
-  ...['snapshot', 'start', 'stop', 'summarize'].map(method => ({
+  ...['snapshot', 'start', 'stop', 'summarize', 'prepare'].map(method => ({
     id: 'dsh-meeting-control.' + method, service: 'meetingControl', namespace: 'meeting',
     method, invocation: { kind: 'direct' as const }, parameters: [param('sessionId')], result: codec,
   })),

@@ -13,6 +13,7 @@ export interface MeetingClientRemote {
   start(id: string): Promise<RemoteResult<MeetingView>>
   stop(id: string): Promise<RemoteResult<MeetingView>>
   summarize(id: string): Promise<RemoteResult<MeetingView>>
+  prepare(id: string): Promise<RemoteResult<MeetingView>>
   watch(id: string, signal: AbortSignal): RemoteStreamHandle<MeetingView, never>
 }
 declare module '@deepseek-ai/cordis' {

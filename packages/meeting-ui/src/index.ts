@@ -16,7 +16,7 @@ export interface Config { summaryIntervalMs: number }
 interface LiveRecording { source: WindowsLoopback; startedAt: number; timer: ReturnType<typeof setInterval> }
 
 export default class MeetingControl extends TypertRemoteService {
-  static inject = ['meetingContext', 'meetingCapture', 'sessions', 'typert', 'llm', 'agents']
+  static inject = ['meetingContext', 'meetingCapture', 'speechToText', 'sessions', 'typert', 'llm', 'agents']
   static Config = z.object({ summaryIntervalMs: z.number().min(1_000).default(900_000) })
   private readonly live = new Map<string, LiveRecording>()
   private readonly summaries = new Map<string, Promise<void>>()
@@ -45,12 +45,14 @@ export default class MeetingControl extends TypertRemoteService {
     const [summary, transcriptText] = await Promise.all([
       store.readDocument(sessionId, 'summary.md'), store.readDocument(sessionId, 'transcript.md')])
     const options = this.state.get(sessionId)
+    const recognizer = this.ctx.speechToText.snapshot().providers.find(p => p.id === 'sensevoice-local')
     return { sessionId, phase: state?.phase ?? 'ready',
       recording: this.live.has(sessionId),
       startedAt: this.live.get(sessionId)?.startedAt,
       transcript: state?.segments.length ?? 0,
       revision: state?.revision ?? 0,
-      summary, transcriptText, summaryUpdatedAt: options?.updatedAt, nextSummaryAt: options?.nextAt,
+      summary, transcriptText, recognizerPhase: recognizer?.preparation.phase ?? 'missing',
+      summaryUpdatedAt: options?.updatedAt, nextSummaryAt: options?.nextAt,
       summaryBusy: options?.busy ?? false, summaryDeferred: options?.deferred ?? false,
       error: options?.error ?? state?.interruption }
   }
@@ -70,6 +72,10 @@ export default class MeetingControl extends TypertRemoteService {
   }
 
   async start(sessionId: string): Promise<MeetingView> {
+    const provider = this.ctx.speechToText.snapshot().providers.find(p => p.id === 'sensevoice-local')
+    if (!provider || provider.preparation.phase !== 'ready') {
+      throw new Error('SenseVoice 尚未就绪，请先点击“准备 SenseVoice”完成模型准备')
+    }
     if (this.live.size > 0 || this.starting) throw new Error('System playback audio is already recording in another Session')
     this.starting = true
     if (this.live.has(sessionId)) throw new Error('Meeting is already recording')
@@ -114,6 +120,12 @@ export default class MeetingControl extends TypertRemoteService {
     await this.close(sessionId)
     await this.makeSummary(sessionId, true)
     if (this.state.get(sessionId)?.deferred) this.deferFinal(sessionId)
+    return this.snapshot(sessionId)
+  }
+
+  async prepare(sessionId: string): Promise<MeetingView> {
+    if (!this.ctx.sessions.get(sessionId as SessionId)) throw new Error('Meeting Session is unavailable')
+    this.ctx.speechToText.prepare('sensevoice-local')
     return this.snapshot(sessionId)
   }
 

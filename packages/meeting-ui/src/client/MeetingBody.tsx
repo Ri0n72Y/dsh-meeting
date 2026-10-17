@@ -24,7 +24,7 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
   const { tab } = useTabInfo()
   const [data, setData] = useState<MeetingView | null>(null)
   const [selected, setSelected] = useState<'transcript' | 'summary'>('transcript')
-  const [action, setAction] = useState<'start' | 'stop' | 'summarize' | null>(null)
+  const [action, setAction] = useState<'start' | 'stop' | 'summarize' | 'prepare' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(Date.now())
   const scroll = useRef<HTMLDivElement>(null)
@@ -55,12 +55,13 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
     const el = scroll.current
     if (el && anchored.current) el.scrollTop = el.scrollHeight
   }, [content, selected])
-  const run = async (name: 'start' | 'stop' | 'summarize') => {
+  const run = async (name: 'start' | 'stop' | 'summarize' | 'prepare') => {
     if (action) return
     setAction(name); setError(null)
     try {
       const result = name === 'start' ? meetingRemote.start(sessionId)
-        : name === 'stop' ? meetingRemote.stop(sessionId) : meetingRemote.summarize(sessionId)
+        : name === 'stop' ? meetingRemote.stop(sessionId)
+        : name === 'prepare' ? meetingRemote.prepare(sessionId) : meetingRemote.summarize(sessionId)
       setData(valueOf(await result))
     } catch (cause) { setError(String(cause)) }
     finally { setAction(null) }
@@ -80,11 +81,18 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
       <div className={css.actions}>
         {data?.recording
           ? <Button variant="outline" size="sm" disabled={action !== null} onClick={() => void run('stop')}>停止会议</Button>
-          : <Button variant="primary" size="sm" disabled={action !== null || data?.phase === 'stopped'}
+          : <Button variant="primary" size="sm" disabled={action !== null || data?.phase === 'stopped' || data?.recognizerPhase !== 'ready'}
             onClick={() => void run('start')}>开始会议</Button>}
       </div>
       <div className={css.detail}>系统播放音频 · Windows WASAPI Loopback</div>
-      <div className={css.detail}>SenseVoice · 已识别 {data?.transcript ?? 0} 段</div>
+      <div className={css.detail}>SenseVoice · {data?.recognizerPhase === 'ready' ? '已就绪' :
+        data?.recognizerPhase === 'missing' ? '未安装' : data?.recognizerPhase ?? '检测中'} · 已识别 {data?.transcript ?? 0} 段</div>
+      {data && data.recognizerPhase !== 'ready' && data.recognizerPhase !== 'missing' && (
+        <Button variant="outline" size="sm"
+          disabled={action !== null || ['downloading','checking','loading','waking','cancelling'].includes(data.recognizerPhase)}
+          onClick={() => void run('prepare')}>准备 SenseVoice</Button>
+      )}
+      {data?.recognizerPhase === 'missing' && <div className={css.detail}>请先安装 DSH 官方语音输入插件。</div>}
     </header>
     {(error || data?.error) && <p role="alert" className={css.error}>{error || data?.error}</p>}
     <div className={css.tabRow}>
