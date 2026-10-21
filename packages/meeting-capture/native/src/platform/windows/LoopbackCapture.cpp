@@ -295,10 +295,14 @@ HRESULT CLoopbackCapture::OnStartCapture(IMFAsyncResult *pResult)
 //
 HRESULT CLoopbackCapture::StopCaptureAsync()
 {
-   RETURN_HR_IF(E_NOT_VALID_STATE, (m_DeviceState != DeviceState::Capturing) &&
-                                       (m_DeviceState != DeviceState::Error));
-
-   m_DeviceState = DeviceState::Stopping;
+   {
+      // Share the producer's lock when changing capture state. Otherwise a
+      // sample callback can race the Stop transition before the final marker.
+      auto lock = m_CritSec.lock();
+      RETURN_HR_IF(E_NOT_VALID_STATE, (m_DeviceState != DeviceState::Capturing) &&
+                                          (m_DeviceState != DeviceState::Error));
+      m_DeviceState = DeviceState::Stopping;
+   }
 
    RETURN_IF_FAILED(MFPutWorkItem2(MFASYNC_CALLBACK_QUEUE_MULTITHREADED, 0, &m_xStopCapture, nullptr));
 
