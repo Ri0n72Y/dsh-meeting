@@ -33,22 +33,29 @@ export class WindowsLoopback {
   private draining: Promise<void> | null = null
   private error: Error | undefined
   private stopped = false
+  private failedIntake = false
+  private stopTask: Promise<{ samples: number; error?: string }> | null = null
   private samples = 0
   private carry = Buffer.alloc(0)
   constructor(private readonly push: (samples: Float32Array) => Promise<void>,
-    private readonly onError: (error: Error) => void) {}
+    private readonly onError: (error: Error) => void,
+    private readonly createNative?: () => NativeLoopback) {}
 
   start(): void {
-    if (process.platform !== 'win32' || process.arch !== 'x64') {
+    if (!this.createNative && (process.platform !== 'win32' || process.arch !== 'x64')) {
       throw new Error('WASAPI system audio requires Windows x64')
     }
-    let addon: LoopbackModule
-    try { addon = require('loopback-capture') as LoopbackModule }
-    catch (cause) { throw new Error('WASAPI loopback native package is missing or could not load', { cause }) }
-    this.native = new addon.LoopbackCapture()
+    if (this.createNative) {
+      this.native = this.createNative()
+    } else {
+      let addon: LoopbackModule
+      try { addon = require('loopback-capture') as LoopbackModule }
+      catch (cause) { throw new Error('WASAPI loopback native package is missing or could not load', { cause }) }
+      this.native = new addon.LoopbackCapture()
+    }
     try {
       this.native.startSystemAudio((bytes) => {
-        if (this.stopped || this.error) return
+        if (this.stopped || this.failedIntake) return
         try {
           // Native WASAPI chunks need not end on a 3-stereo-frame boundary.
           const joined = this.carry.length ? Buffer.concat([this.carry, bytes]) : Buffer.from(bytes)
@@ -59,12 +66,7 @@ export class WindowsLoopback {
           this.pending += samples.length
           if (this.pending > 16_000 * 3) throw new Error('WASAPI delivery exceeded 3 seconds of buffered audio')
           this.queued.push(samples)
-          if (!this.draining) this.draining = this.drain().finally(() => {
-            this.draining = null
-            if (this.queued.length && !this.stopped && !this.error) {
-              this.draining = this.drain().finally(() => { this.draining = null })
-            }
-          })
+          this.startDrain()
         } catch (cause) { this.fail(cause) }
       })
     } catch (error) {
@@ -74,41 +76,69 @@ export class WindowsLoopback {
     }
   }
 
+  private startDrain(): void {
+    if (this.draining) return
+    this.draining = this.drain().finally(() => {
+      this.draining = null
+      if (this.queued.length) this.startDrain()
+    })
+  }
+
   private async drain(): Promise<void> {
-    try {
-      while (this.queued.length && !this.stopped) {
-        const samples = this.queued.shift()!
-        this.pending -= samples.length
+    while (this.queued.length) {
+      const samples = this.queued.shift()!
+      try {
+        // Accepted PCM must be attempted even after intake failure.
         await this.push(samples)
         this.samples += samples.length
+      } catch (error) {
+        // A failed disk write is reported, never counted as persisted.
+        this.fail(error)
+      } finally {
+        this.pending -= samples.length
       }
-    } catch (error) { this.fail(error) }
+    }
   }
 
   private fail(cause: unknown): void {
     if (this.error) return
     this.error = cause instanceof Error ? cause : new Error(String(cause))
-    this.stopped = true
-    try { this.native?.stop() } finally { this.onError(this.error) }
+    this.failedIntake = true
+    // MeetingControl stops the source first, then cancels its capture.
+    this.onError(this.error)
   }
 
-  async stop(): Promise<{ samples: number; error?: string }> {
-    this.native?.stop()
-    this.native = undefined
-    // Native callback is stopped; finish queued work without dropping tail.
-    while (this.draining) await this.draining
+  stop(): Promise<{ samples: number; error?: string }> {
+    return this.stopTask ??= this.finish()
+  }
+
+  private async finish(): Promise<{ samples: number; error?: string }> {
+    try {
+      this.native?.stop()
+    } catch (error) {
+      // Native failure must not skip the already accepted JS queue.
+      this.error ??= error instanceof Error ? error : new Error(String(error))
+    } finally {
+      this.native = undefined
+    }
+    // Upstream TSFN does not acknowledge all queued native-to-JS callbacks.
+    // This only guarantees draining callbacks already admitted by JS.
+    while (this.draining || this.queued.length) {
+      if (this.draining) await this.draining
+      else this.startDrain()
+    }
     this.stopped = true
-    if (this.carry.length && !this.error) {
+    if (this.carry.length) {
       const padded = Buffer.alloc(12)
       this.carry.copy(padded)
-      this.queued.push(downmix48k(padded))
       this.carry = Buffer.alloc(0)
-    }
-    const remaining = this.queued.splice(0)
-    for (const block of remaining) {
-      if (this.error) break
-      await this.push(block)
-      this.samples += block.length
+      try {
+        const samples = downmix48k(padded)
+        await this.push(samples)
+        this.samples += samples.length
+      } catch (error) {
+        this.error ??= error instanceof Error ? error : new Error(String(error))
+      }
     }
     return { samples: this.samples, ...this.error ? { error: this.error.message } : {} }
   }

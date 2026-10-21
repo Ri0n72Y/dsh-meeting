@@ -32,7 +32,23 @@ export default class MeetingControl extends TypertRemoteService {
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'meetingControl', { namespace: 'meeting' })
-    ctx.effect(() => ctx.typert.remotes.register(contribution), 'meeting-control Remote contracts')
+    // DSH 0.2.0-rc.2 separates consumer descriptors from Host local invocations.
+    // The published Typert Context contract omits register(), but its runtime
+    // service exposes the supported generated-contribution registration method.
+    const hostTypert = ctx.typert as typeof ctx.typert & {
+      register(value: {
+        package: string
+        face: 'host'
+        schemas: readonly []
+        model: { services: readonly []; events: readonly []; objects: readonly [] }
+        invocations: typeof contribution.descriptors
+      }): () => void
+    }
+    ctx.effect(() => hostTypert.register({
+      package: contribution.package, face: 'host', schemas: [],
+      model: { services: [], events: [], objects: [] },
+      invocations: contribution.descriptors,
+    }), 'meeting-control Host Gateway invocations')
     ctx.on('session/disposed', session => {
       this.clearDeferredTimer(session.header.id)
       void this.close(session.header.id).catch(error => ctx.logger('meeting-control').warn(String(error)))
@@ -84,28 +100,36 @@ export default class MeetingControl extends TypertRemoteService {
     }
     if (this.live.size > 0 || this.starting) throw new Error('System playback audio is already recording in another Session')
     this.starting = true
-    let capture: Awaited<ReturnType<typeof this.ctx.meetingCapture.start>>
-    try { capture = await this.ctx.meetingCapture.start(sessionId) }
-    catch (error) { this.starting = false; throw error }
-    const source = new WindowsLoopback(
-      samples => this.ctx.meetingCapture.push(sessionId, samples),
-      error => { this.state.set(sessionId, { ...this.state.get(sessionId), error: error.message });
-        capture.cancel(error); void this.close(sessionId).catch(() => undefined) },
-    )
-    try { source.start() } catch (error) {
-      capture.cancel(error)
-      await this.ctx.meetingCapture.stop(sessionId)
+    try {
+      const capture = await this.ctx.meetingCapture.start(sessionId)
+      const source = new WindowsLoopback(
+        samples => this.ctx.meetingCapture.push(sessionId, samples),
+        error => {
+          this.state.set(sessionId, { ...this.state.get(sessionId), error: error.message })
+          // Drain source PCM before cancelling the capture.
+          void this.close(sessionId).catch(e => this.ctx.logger('meeting-control').warn(String(e)))
+        },
+      )
+      try { source.start() } catch (error) {
+        capture.cancel(error)
+        try { await this.ctx.meetingCapture.stop(sessionId) }
+        catch (cleanupError) { this.ctx.logger('meeting-control').warn(String(cleanupError)) }
+        throw error
+      }
+      const startedAt = Date.now()
+      const timer = setInterval(() => { void this.tick(sessionId).catch(error => {
+        this.state.set(sessionId, { ...this.state.get(sessionId), error: String(error) })
+      }) }, 10_000)
+      this.live.set(sessionId, { source, startedAt, timer, cancel: reason => capture.cancel(reason) })
+      this.state.set(sessionId, { nextAt: startedAt + this.config.summaryIntervalMs })
+      try { return await this.snapshot(sessionId) }
+      catch (error) {
+        await this.close(sessionId).catch(cleanup => this.ctx.logger('meeting-control').warn(String(cleanup)))
+        throw error
+      }
+    } finally {
       this.starting = false
-      throw error
     }
-    const startedAt = Date.now()
-    const timer = setInterval(() => { void this.tick(sessionId).catch(error => {
-      this.state.set(sessionId, { ...this.state.get(sessionId), error: String(error) })
-    }) }, 10_000)
-    this.live.set(sessionId, { source, startedAt, timer, cancel: reason => capture.cancel(reason) })
-    this.starting = false
-    this.state.set(sessionId, { nextAt: startedAt + this.config.summaryIntervalMs })
-    return this.snapshot(sessionId)
   }
 
   private close(sessionId: string): Promise<void> {

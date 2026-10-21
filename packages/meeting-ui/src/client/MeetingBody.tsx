@@ -29,13 +29,16 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
   const [now, setNow] = useState(Date.now())
   const scroll = useRef<HTMLDivElement>(null)
   const anchored = useRef(true)
+  // Async actions retain their source Session; never commit their result into another.
+  const currentSession = useRef(sessionId)
+  currentSession.current = sessionId
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [])
   useEffect(() => {
     const controller = new AbortController()
-    setData(null); setError(null)
+    setData(null); setError(null); setAction(null)
     const listen = async () => {
       try {
         // In DSH the Remote stream owns its connection and is disposed on abort.
@@ -62,9 +65,13 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
       const result = name === 'start' ? meetingRemote.start(sessionId)
         : name === 'stop' ? meetingRemote.stop(sessionId)
         : name === 'prepare' ? meetingRemote.prepare(sessionId) : meetingRemote.summarize(sessionId)
-      setData(valueOf(await result))
-    } catch (cause) { setError(String(cause)) }
-    finally { setAction(null) }
+      const value = valueOf(await result)
+      if (currentSession.current === sessionId) setData(value)
+    } catch (cause) {
+      if (currentSession.current === sessionId) setError(String(cause))
+    } finally {
+      if (currentSession.current === sessionId) setAction(null)
+    }
   }
   const elapsed = data?.startedAt && data.recording
     ? Math.max(0, Math.floor((now - data.startedAt) / 1000)) : 0
