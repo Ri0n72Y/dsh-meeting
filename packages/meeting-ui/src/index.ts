@@ -18,6 +18,7 @@ interface LiveRecording {
   startedAt: number
   timer: ReturnType<typeof setInterval>
   cancel(reason: Error): void
+  unregisterSource(): void
   closing?: Promise<void>
 }
 
@@ -49,10 +50,7 @@ export default class MeetingControl extends TypertRemoteService {
       model: { services: [], events: [], objects: [] },
       invocations: contribution.descriptors,
     }), 'meeting-control Host Gateway invocations')
-    ctx.on('session/disposed', session => {
-      this.clearDeferredTimer(session.header.id)
-      void this.close(session.header.id).catch(error => ctx.logger('meeting-control').warn(String(error)))
-    })
+    ctx.on('session/disposed', session => this.clearDeferredTimer(session.header.id))
     ctx.effect(() => async () => {
       for (const id of this.deferredTimers.keys()) this.clearDeferredTimer(id)
       await Promise.allSettled([...this.live.keys()].map(id => this.close(id)))
@@ -120,7 +118,16 @@ export default class MeetingControl extends TypertRemoteService {
       const timer = setInterval(() => { void this.tick(sessionId).catch(error => {
         this.state.set(sessionId, { ...this.state.get(sessionId), error: String(error) })
       }) }, 10_000)
-      this.live.set(sessionId, { source, startedAt, timer, cancel: reason => capture.cancel(reason) })
+      this.live.set(sessionId, { source, startedAt, timer, cancel: reason => capture.cancel(reason), unregisterSource: () => {} })
+      try {
+        const unregister = this.ctx.meetingCapture.registerSourceCloser(sessionId, () => this.close(sessionId))
+        this.live.get(sessionId)!.unregisterSource = unregister
+        // Session disposal can race MeetingCapture.start; never keep an orphan device.
+        if (!this.ctx.sessions.get(sessionId as SessionId)) throw new Error('DSH Session disposed during capture start')
+      } catch (error) {
+        await this.close(sessionId).catch(cleanup => this.ctx.logger('meeting-control').warn(String(cleanup)))
+        throw error
+      }
       this.state.set(sessionId, { nextAt: startedAt + this.config.summaryIntervalMs })
       try { return await this.snapshot(sessionId) }
       catch (error) {
@@ -154,14 +161,15 @@ export default class MeetingControl extends TypertRemoteService {
         // Keep the device lease while both the native source and capture settle.
         try {
           const receipt = await this.ctx.meetingCapture.stop(sessionId)
-          if (receipt.interrupted) this.state.set(sessionId, {
+          if (receipt.interrupted || receipt.errors.length) this.state.set(sessionId, {
             ...this.state.get(sessionId),
-            error: this.state.get(sessionId)?.error ?? receipt.errors.at(-1) ?? 'Meeting capture interrupted',
+            error: this.state.get(sessionId)?.error ?? (receipt.errors.slice(-3).join('; ') || 'Meeting capture interrupted'),
           })
         } catch (error) {
           failure ??= error
           this.state.set(sessionId, { ...this.state.get(sessionId), error: String(failure) })
         } finally {
+          record.unregisterSource()
           if (this.live.get(sessionId) === record) this.live.delete(sessionId)
         }
       }

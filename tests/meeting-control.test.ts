@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import MeetingControl from '../packages/meeting-ui/src/index.js'
+import MeetingCapture from '../packages/meeting-capture/src/index.js'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -15,6 +16,7 @@ interface Lease {
   startedAt: number
   timer: ReturnType<typeof setInterval>
   cancel(reason: Error): void
+  unregisterSource(): void
   closing?: Promise<void>
 }
 interface Internals {
@@ -85,7 +87,7 @@ test('device lease survives concurrent close, native stop and capture settlement
   const timer = setInterval(() => {}, 100_000)
   f.internal.live.set('A', {
     source: { stop: () => { nativeStops++; return device.promise } },
-    startedAt: 1, timer, cancel() {},
+    startedAt: 1, timer, cancel() {}, unregisterSource() {},
   })
   try {
     const first = f.internal.close('A')
@@ -110,7 +112,7 @@ test('native stop rejection still cancels and settles capture, releases lease, a
   const timer = setInterval(() => {}, 100_000)
   f.internal.live.set('A', {
     source: { async stop() { throw new Error('WASAPI stop failed') } },
-    startedAt: 1, timer, cancel(error) { cancellation = error.message },
+    startedAt: 1, timer, cancel(error) { cancellation = error.message }, unregisterSource() {}, unregisterSource() {},
   })
   try {
     await assert.rejects(f.internal.close('A'), /WASAPI stop failed/)
@@ -239,4 +241,54 @@ test('start always releases its ownership guard even if native start and capture
   assert.equal(starts, 2)
   assert.equal(cancels, 2)
   assert.equal(cleanups, 2)
+})
+
+test('normal close retains the ASR failure details in the Session UI', async () => {
+  const f = fixture()
+  const timer = setInterval(() => {}, 100_000)
+  f.context.meetingCapture.stop = async () => ({
+    interrupted: false, errors: ['ASR at 5000ms: model rejected input'],
+  })
+  f.internal.live.set('A', {
+    source: { async stop() { return { samples: 16000 } } },
+    startedAt: 1, timer, cancel() {}, unregisterSource() {},
+  })
+  try {
+    await f.internal.close('A')
+    assert.match(f.internal.state.get('A')?.error ?? '', /ASR at 5000ms/)
+    assert.equal(f.internal.live.size, 0)
+  } finally { clearInterval(timer) }
+})
+
+test('Session disposal stops its active WASAPI source before settling capture; file-only capture still cancels', async () => {
+  const f = fixture()
+  const sourceStopped = deferred<{ samples: number }>()
+  const calls: string[] = []
+  const capture = Object.assign(Object.create(MeetingCapture.prototype), {
+    active: {
+      has: (id: string) => id === 'A',
+      cancel: async (id: string) => { calls.push('cancel:' + id) },
+    },
+    sourceClosers: new Map(),
+  }) as MeetingCapture
+  const unregister = capture.registerSourceCloser('A', () => f.internal.close('A'))
+  f.context.meetingCapture.stop = async () => {
+    calls.push('capture-stop')
+    return { interrupted: false, errors: [] }
+  }
+  const timer = setInterval(() => {}, 100_000)
+  f.internal.live.set('A', {
+    source: { stop: () => { calls.push('source-stop'); return sourceStopped.promise } },
+    startedAt: 1, timer, cancel() {}, unregisterSource: unregister,
+  })
+  try {
+    const disposal = capture.disposeSession('A')
+    assert.deepEqual(calls, ['source-stop'])
+    sourceStopped.resolve({ samples: 120 })
+    await disposal
+    assert.deepEqual(calls, ['source-stop', 'capture-stop'])
+    assert.equal(f.internal.live.size, 0)
+    await capture.disposeSession('B')
+    assert.deepEqual(calls, ['source-stop', 'capture-stop', 'cancel:B'])
+  } finally { clearInterval(timer) }
 })

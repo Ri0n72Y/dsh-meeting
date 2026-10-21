@@ -83,11 +83,17 @@ export class WindowsLoopback {
     }
   }
 
+  // Many tiny gap markers must not accumulate unbounded queue objects.
+  private queueItem(item: Float32Array | { silenceSamples: number }): void {
+    if (this.queued.length >= 1024) throw new Error('WASAPI delivery exceeded queued packet limit')
+    this.queued.push(item)
+    this.startDrain()
+  }
+
   private enqueue(samples: Float32Array): void {
     this.pending += samples.length
     if (this.pending > 16_000 * 3) throw new Error('WASAPI delivery exceeded 3 seconds of buffered audio')
-    this.queued.push(samples)
-    this.startDrain()
+    this.queueItem(samples)
   }
 
   /** A native gap is a count of missing 48 kHz frames, not an allocated PCM buffer. */
@@ -109,8 +115,7 @@ export class WindowsLoopback {
     }
     const samples = Math.floor(frames / 3)
     if (samples) {
-      this.queued.push({ silenceSamples: samples })
-      this.startDrain()
+      this.queueItem({ silenceSamples: samples })
     }
     const partial = frames % 3
     if (partial) this.carry = Buffer.alloc(partial * 4)

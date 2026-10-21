@@ -347,13 +347,16 @@ HRESULT CLoopbackCapture::FinishCaptureAsync()
 //
 HRESULT CLoopbackCapture::OnFinishCapture(IMFAsyncResult *pResult)
 {
-   m_DeviceState = DeviceState::Stopped;
+   // Wait for the in-flight sample loop to release the same lock before
+   // publishing the terminal callback marker on the TSFN FIFO.
+   {
+      auto lock = m_CritSec.lock();
+      m_DeviceState = DeviceState::Stopped;
 
-   // This terminal marker is ordered after every accepted PCM callback.
-   // JS must acknowledge it before returning a durable Stop receipt.
-   EmitAudioData(nullptr, 0);
-   ReleaseThreadSafeFunction();
-
+      // The same lock excludes all in-flight PCM producers.
+      EmitAudioData(nullptr, 0);
+      ReleaseThreadSafeFunction();
+   }
    m_hCaptureStopped.SetEvent();
 
    return S_OK;
@@ -472,7 +475,7 @@ HRESULT CLoopbackCapture::OnAudioSampleRequested()
 
    // If this flag is set, we have already queued up the async call to finialize the WAV header
    // So we don't want to grab or write any more data that would possibly give us an invalid size
-   if (m_DeviceState == DeviceState::Stopping)
+   if (m_DeviceState != DeviceState::Capturing)
    {
       return S_OK;
    }
@@ -509,7 +512,7 @@ HRESULT CLoopbackCapture::OnAudioSampleRequested()
       // A count marker keeps long silent spans out of the N-API byte queue.
       if (!(dwCaptureFlags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR))
       {
-         if ((!m_readPacket || m_positionValid) && u64DevicePosition > m_nextFramePosition)
+         if (m_positionValid && u64DevicePosition > m_nextFramePosition)
          {
             EmitAudioData(nullptr, 0, u64DevicePosition - m_nextFramePosition);
          }
@@ -521,11 +524,10 @@ HRESULT CLoopbackCapture::OnAudioSampleRequested()
          // Invalid positions cannot safely anchor a synthetic silent interval.
          m_positionValid = false;
       }
-      m_readPacket = true;
 
       // Emit every rendered frame, including WASAPI silent packets. Dropping
       // silence would compress the meeting audio timeline and corrupt ASR time.
-      if (m_DeviceState != DeviceState::Stopping)
+      if (m_DeviceState == DeviceState::Capturing)
       {
          const UINT32 byteCount = FramesAvailable * m_CaptureFormat.nBlockAlign;
          if (dwCaptureFlags & AUDCLNT_BUFFERFLAGS_SILENT)

@@ -149,5 +149,4 @@ private:
    bool m_tsfnActive = false;
    UINT64 m_nextFramePosition = 0;
    bool m_positionValid = false;
-   bool m_readPacket = false;
 };

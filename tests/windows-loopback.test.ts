@@ -151,3 +151,26 @@ test('long native silence markers drain in bounded chunks and retain decimator c
   assert.deepEqual(sizes, [1, ...Array(6).fill(80_000)])
   assert.ok(sizes.every(size => size <= 80_000))
 })
+
+test('repeated tiny silence markers cannot grow the pending queue without bound', async () => {
+  let callback!: (bytes: Buffer | number | null) => void
+  let unblock!: () => void
+  const blocked = new Promise<void>(resolve => { unblock = resolve })
+  let stopping!: Promise<{ samples: number; error?: string }>
+  let saved = 0
+  const source = new WindowsLoopback(async pcm => {
+    await blocked
+    saved += pcm.length
+  }, () => { stopping = source.stop() }, () => ({
+    startSystemAudio(cb) { callback = cb },
+    stop() { queueMicrotask(() => callback(null)) },
+  }))
+  source.start()
+  for (let i = 0; i < 1030; i++) callback(3)
+  unblock()
+  const receipt = await stopping
+  assert.match(receipt.error ?? '', /queued packet limit/)
+  // The first accepted sample can be active while up to 1024 are pending.
+  assert.equal(saved, 1025)
+  assert.equal(receipt.samples, 1025)
+})
