@@ -6,6 +6,12 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist/**",
+    "native/CMakeLists.txt",
+    "native/src/**",
+    "native/LICENSE",
+    "native/README.md",
+    "native/package.json",
+    "native/build/Release/*.node",
     "cordis.patch.yml"
   ],
   "exports": {
@@ -42,8 +48,5 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
-  },
-  "optionalDependencies": {
-    "loopback-capture": "3.0.2"
   }
 }

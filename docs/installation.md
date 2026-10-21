@@ -49,4 +49,15 @@ If `Session.header.cwd` is absent, the fallback Workspace is the Host process's 
 Workspace confinement is checked against canonical filesystem paths. Existing symlinks that lead the meeting root, Session directory, audio directory, or state file outside the selected Session Workspace are rejected rather than silently followed. There is no migration of recordings into DSH_HOME.
 
 ## Meeting Sidebar P0
-The new Meeting tab is contributed through DSH's official right Sidebar Slot. Its Start/Stop controls capture Windows x64 **system playback** using `loopback-capture@3.0.2` WASAPI, not a browser microphone. Markdown transcript and summary remain inside the Session Workspace. Auto summary defaults to 15 minutes and uses the live Session's own LLM route only when its Agent is idle. Native Windows verification remains required.
+The new Meeting tab is contributed through DSH's official right Sidebar Slot. Its Start/Stop controls capture Windows x64 **system playback** using a pinned, MIT-licensed native WASAPI source adaptation (based on `loopback-capture@3.0.2`), not a browser microphone.
+
+Before installing MeetingCapture on a Windows x64 source checkout, build its Windows addon with Node 24, MSVC Build Tools and CMake:
+
+```powershell
+cd packages/meeting-capture/native
+npm install --no-package-lock
+npm run build
+cd ../../..
+```
+
+The local addon (inside `native/build/Release/`) preserves WASAPI silent frames and emits an ordered end-of-callback sentinel on Stop. The Host does not use the original upstream prebuilt binary, because that binary drops silence and has no reliable callback flush acknowledgment. CI compiles and loads the patched native source; physical audio-device acceptance still requires a Windows desktop. Markdown transcript and summary remain inside the Session Workspace. Auto summary defaults to 15 minutes and uses the live Session's own LLM route only when its Agent is idle. Native Windows verification remains required.

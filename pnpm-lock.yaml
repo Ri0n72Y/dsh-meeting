@@ -56,10 +56,6 @@ importers:
       '@ri0n72y/dsh-meeting-speaker':
         specifier: workspace:*
         version: link:../meeting-speaker
-    optionalDependencies:
-      loopback-capture:
-        specifier: 3.0.2
-        version: 3.0.2
 
   packages/meeting-context:
     dependencies:
@@ -838,12 +834,6 @@ packages:
 
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
-
-  loopback-capture@3.0.2:
-    resolution: {integrity: sha512-65qyF9L7e+InnbEZP3Ic4C4J+SszoxEq84XpIZWJYH3/IgUpTKqBzJ4wCF+ShL3bvqV7I2wOEgQv9VfpaO2AMw==}
-    engines: {node: '>=18.17.0'}
-    cpu: [x64]
-    os: [linux, win32]
 
   loose-envify@1.4.0:
     resolution: {integrity: sha512-lyuxPGr/Wfhrlem2CL/UcnUc1zcqKAImBDzukY7Y5F/yQiNdko6+fRLevlw1HgMySw7f611UIY408EtxRSoK3Q==}
@@ -1666,11 +1656,6 @@ snapshots:
   jsesc@3.1.0: {}
 
   json-schema-traverse@1.0.0: {}
-
-  loopback-capture@3.0.2:
-    dependencies:
-      bindings: 1.5.0
-    optional: true
 
   loose-envify@1.4.0:
     dependencies:

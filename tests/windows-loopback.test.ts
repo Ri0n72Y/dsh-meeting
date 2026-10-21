@@ -15,7 +15,7 @@ test('non-Windows devices are rejected before attempting native imports', () => 
 })
 
 test('overrun stops intake but persists every PCM block admitted before failure', async () => {
-  let callback!: (bytes: Buffer) => void
+  let callback!: (bytes: Buffer | null) => void
   let stopCalls = 0
   let finish!: Promise<{ samples: number; error?: string }>
   let resolveFirst!: () => void
@@ -27,7 +27,7 @@ test('overrun stops intake but persists every PCM block admitted before failure'
     if (++pushes === 1) await first
   }, () => { finish = source.stop() }, () => ({
     startSystemAudio(cb) { callback = cb },
-    stop() { stopCalls++ },
+    stop() { stopCalls++; queueMicrotask(() => callback(null)) },
   }))
   source.start()
   callback(Buffer.alloc(12 * 20_000))
@@ -42,7 +42,7 @@ test('overrun stops intake but persists every PCM block admitted before failure'
 })
 
 test('native stop failure still finishes accepted PCM before reporting error', async () => {
-  let callback!: (bytes: Buffer) => void
+  let callback!: (bytes: Buffer | null) => void
   let release!: () => void
   const block = new Promise<void>(resolve => { release = resolve })
   const delivered: number[] = []
@@ -61,4 +61,48 @@ test('native stop failure still finishes accepted PCM before reporting error', a
   assert.deepEqual(delivered, [900])
   assert.equal(receipt.samples, 900)
   assert.match(receipt.error ?? '', /native stop failed/)
+})
+
+test('stop waits for the native terminal marker behind the final audio callbacks', async () => {
+  let callback!: (bytes: Buffer | null) => void
+  let stopNative = 0
+  const writes: number[] = []
+  const source = new WindowsLoopback(async samples => {
+    writes.push(samples.length)
+  }, () => {}, () => ({
+    startSystemAudio(cb) { callback = cb },
+    stop() {
+      stopNative++
+      // Native already queued the final PCM then the terminal marker.
+      setImmediate(() => {
+        callback(Buffer.alloc(12 * 1600))
+        callback(null)
+      })
+    },
+  }))
+  source.start()
+  const stopped = source.stop()
+  let finished = false
+  void stopped.then(() => { finished = true })
+  await new Promise<void>(r => setImmediate(r))
+  // Once the native end marker has run, every earlier callback is in JS queue.
+  const receipt = await stopped
+  assert.equal(finished, true)
+  assert.equal(receipt.samples, 1600)
+  assert.deepEqual(writes, [1600])
+  assert.equal(stopNative, 1)
+})
+
+test('silent PCM consumes timeline samples instead of being omitted', async () => {
+  let callback!: (bytes: Buffer | null) => void
+  const observed: Float32Array[] = []
+  const source = new WindowsLoopback(async pcm => { observed.push(pcm) }, () => {}, () => ({
+    startSystemAudio(cb) { callback = cb },
+    stop() { queueMicrotask(() => callback(null)) },
+  }))
+  source.start()
+  callback(Buffer.alloc(12 * 16_000)) // one full second of 48 kHz zero samples
+  const receipt = await source.stop()
+  assert.equal(receipt.samples, 16_000)
+  assert.ok(observed.flatMap(samples => [...samples]).every(sample => sample === 0))
 })

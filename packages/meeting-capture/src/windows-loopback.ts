@@ -2,7 +2,7 @@
 import { createRequire } from 'node:module'
 
 interface NativeLoopback {
-  startSystemAudio(onChunk: (pcm48kStereo: Buffer) => void): void
+  startSystemAudio(onChunk: (pcm48kStereo: Buffer | null) => void): void
   stop(): void
 }
 interface LoopbackModule { LoopbackCapture: new () => NativeLoopback }
@@ -35,6 +35,8 @@ export class WindowsLoopback {
   private stopped = false
   private failedIntake = false
   private stopTask: Promise<{ samples: number; error?: string }> | null = null
+  private nativeEnd: Promise<void> | undefined
+  private resolveNativeEnd: (() => void) | undefined
   private samples = 0
   private carry = Buffer.alloc(0)
   constructor(private readonly push: (samples: Float32Array) => Promise<void>,
@@ -49,12 +51,17 @@ export class WindowsLoopback {
       this.native = this.createNative()
     } else {
       let addon: LoopbackModule
-      try { addon = require('loopback-capture') as LoopbackModule }
-      catch (cause) { throw new Error('WASAPI loopback native package is missing or could not load', { cause }) }
+      try { addon = require('../native/build/Release/loopback_capture_addon.node') as LoopbackModule }
+      catch (cause) { throw new Error('Meeting WASAPI native addon is not built for Windows x64; build packages/meeting-capture/native', { cause }) }
       this.native = new addon.LoopbackCapture()
     }
+    this.nativeEnd = new Promise<void>(resolve => { this.resolveNativeEnd = resolve })
     try {
       this.native.startSystemAudio((bytes) => {
+        if (bytes === null) {
+          this.resolveNativeEnd?.()
+          return
+        }
         if (this.stopped || this.failedIntake) return
         try {
           // Native WASAPI chunks need not end on a 3-stereo-frame boundary.
@@ -113,16 +120,32 @@ export class WindowsLoopback {
   }
 
   private async finish(): Promise<{ samples: number; error?: string }> {
+    let deviceStopFailed = false
     try {
       this.native?.stop()
     } catch (error) {
-      // Native failure must not skip the already accepted JS queue.
+      deviceStopFailed = true
       this.error ??= error instanceof Error ? error : new Error(String(error))
     } finally {
       this.native = undefined
     }
-    // Upstream TSFN does not acknowledge all queued native-to-JS callbacks.
-    // This only guarantees draining callbacks already admitted by JS.
+    if (!deviceStopFailed && this.nativeEnd) {
+      // The patched native addon places a null sentinel AFTER all PCM on the
+      // same TSFN queue. Its delivery is the only trustworthy drain barrier.
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          this.nativeEnd,
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('WASAPI native callback drain timed out')), 10_000)
+          }),
+        ])
+      } catch (error) {
+        this.error ??= error instanceof Error ? error : new Error(String(error))
+      } finally {
+        if (timeout) clearTimeout(timeout)
+      }
+    }
     while (this.draining || this.queued.length) {
       if (this.draining) await this.draining
       else this.startDrain()
