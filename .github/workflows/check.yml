@@ -144,3 +144,33 @@ jobs:
             tail -n 40 "$RUNNER_TEMP/meeting-web.log" | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[REDACTED]/g'
             exit 1
           fi
+          # Real authenticated Gateway RPC: invoking a nonexistent Session must
+          # reach the Meeting service and return its business error, never 404
+          # or gateway/invocation-unavailable. A client manifest alone is insufficient.
+          for method in snapshot start stop prepare summarize; do
+            printf '{"type":"client-request","rpcId":"proof-%s","method":"meeting/%s","payload":{"args":{"sessionId":"meeting-ci-nonexistent"}}}' "$method" "$method" > "$RUNNER_TEMP/meeting-request.json"
+            curl --fail --silent --show-error --max-time 10 \
+              -b "$RUNNER_TEMP/meeting-cookie.txt" \
+              -H 'content-type: application/json' \
+              --data-binary "@$RUNNER_TEMP/meeting-request.json" \
+              "http://127.0.0.1:$port/api/meeting/$method" > "$RUNNER_TEMP/meeting-response.json"
+            python3 - "$method" "$RUNNER_TEMP/meeting-response.json" <<'PY'
+          import json,sys
+          method,path=sys.argv[1:]
+          with open(path,encoding='utf8') as file: obj=json.load(file)
+          result=obj.get('result',{})
+          error=result.get('error',{})
+          assert obj.get('type')=='server-response', (method,obj)
+          assert result.get('ok') is False, (method,obj)
+          text=error.get('message','')
+          expected={
+           'snapshot':'Meeting requires a live DSH Session',
+           'start':'SenseVoice',
+           'stop':'Meeting is not recording',
+           'prepare':'Meeting Session is unavailable',
+           'summarize':'Meeting Session is no longer available',
+          }
+          assert expected[method] in text, (method,obj)
+          print('MEETING_GATEWAY_ROUNDTRIP_PASS',method)
+          PY
+          done
