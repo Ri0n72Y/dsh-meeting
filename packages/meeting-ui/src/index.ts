@@ -13,26 +13,32 @@ import { contribution, type MeetingView } from './remote.js'
 declare module '@deepseek-ai/cordis' { interface Context { meetingControl: MeetingControl } }
 
 export interface Config { summaryIntervalMs: number }
-interface LiveRecording { source: WindowsLoopback; startedAt: number; timer: ReturnType<typeof setInterval> }
+interface LiveRecording {
+  source: WindowsLoopback
+  startedAt: number
+  timer: ReturnType<typeof setInterval>
+  cancel(reason: Error): void
+  closing?: Promise<void>
+}
 
 export default class MeetingControl extends TypertRemoteService {
   static inject = ['meetingContext', 'meetingCapture', 'speechToText', 'sessions', 'typert', 'llm', 'agents']
   static Config = z.object({ summaryIntervalMs: z.number().min(1_000).default(900_000) })
   private readonly live = new Map<string, LiveRecording>()
-  private readonly summaries = new Map<string, Promise<void>>()
+  private readonly summaries = new Map<string, { task: Promise<void>; final: boolean }>()
   private starting = false
-  private readonly finalTimers = new Map<string, ReturnType<typeof setInterval>>()
+  private readonly deferredTimers = new Map<string, ReturnType<typeof setInterval>>()
   private readonly state = new Map<string, { updatedAt?: number; nextAt?: number; error?: string; deferred?: boolean; busy?: boolean }>()
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'meetingControl', { namespace: 'meeting' })
     ctx.effect(() => ctx.typert.remotes.register(contribution), 'meeting-control Remote contracts')
     ctx.on('session/disposed', session => {
-      this.clearFinalTimer(session.header.id)
+      this.clearDeferredTimer(session.header.id)
       void this.close(session.header.id).catch(error => ctx.logger('meeting-control').warn(String(error)))
     })
     ctx.effect(() => async () => {
-      for (const id of this.finalTimers.keys()) this.clearFinalTimer(id)
+      for (const id of this.deferredTimers.keys()) this.clearDeferredTimer(id)
       await Promise.allSettled([...this.live.keys()].map(id => this.close(id)))
     }, 'meeting-control: release WASAPI')
   }
@@ -78,7 +84,6 @@ export default class MeetingControl extends TypertRemoteService {
     }
     if (this.live.size > 0 || this.starting) throw new Error('System playback audio is already recording in another Session')
     this.starting = true
-    if (this.live.has(sessionId)) throw new Error('Meeting is already recording')
     let capture: Awaited<ReturnType<typeof this.ctx.meetingCapture.start>>
     try { capture = await this.ctx.meetingCapture.start(sessionId) }
     catch (error) { this.starting = false; throw error }
@@ -97,29 +102,56 @@ export default class MeetingControl extends TypertRemoteService {
     const timer = setInterval(() => { void this.tick(sessionId).catch(error => {
       this.state.set(sessionId, { ...this.state.get(sessionId), error: String(error) })
     }) }, 10_000)
-    this.live.set(sessionId, { source, startedAt, timer })
+    this.live.set(sessionId, { source, startedAt, timer, cancel: reason => capture.cancel(reason) })
     this.starting = false
     this.state.set(sessionId, { nextAt: startedAt + this.config.summaryIntervalMs })
     return this.snapshot(sessionId)
   }
 
-  private async close(sessionId: string): Promise<void> {
+  private close(sessionId: string): Promise<void> {
     const record = this.live.get(sessionId)
-    if (!record) return
-    this.live.delete(sessionId)
+    if (!record) return Promise.resolve()
+    if (record.closing) return record.closing
     clearInterval(record.timer)
-    try {
-      const ended = await record.source.stop()
-      if (ended.error) this.state.set(sessionId, { ...this.state.get(sessionId), error: ended.error })
-      await this.ctx.meetingCapture.stop(sessionId)
-    } finally { this.live.delete(sessionId) }
+    const task = (async () => {
+      let failure: unknown
+      try {
+        const ended = await record.source.stop()
+        if (ended.error) {
+          record.cancel(new Error(ended.error))
+          this.state.set(sessionId, { ...this.state.get(sessionId), error: ended.error })
+        }
+      } catch (error) {
+        failure = error
+        const reason = error instanceof Error ? error : new Error(String(error))
+        record.cancel(reason)
+        this.state.set(sessionId, { ...this.state.get(sessionId), error: reason.message })
+      } finally {
+        // Keep the device lease while both the native source and capture settle.
+        try {
+          const receipt = await this.ctx.meetingCapture.stop(sessionId)
+          if (receipt.interrupted) this.state.set(sessionId, {
+            ...this.state.get(sessionId),
+            error: this.state.get(sessionId)?.error ?? receipt.errors.at(-1) ?? 'Meeting capture interrupted',
+          })
+        } catch (error) {
+          failure ??= error
+          this.state.set(sessionId, { ...this.state.get(sessionId), error: String(failure) })
+        } finally {
+          if (this.live.get(sessionId) === record) this.live.delete(sessionId)
+        }
+      }
+      if (failure) throw failure
+    })()
+    record.closing = task
+    return task
   }
 
   async stop(sessionId: string): Promise<MeetingView> {
     if (!this.live.has(sessionId)) throw new Error('Meeting is not recording')
     await this.close(sessionId)
     await this.makeSummary(sessionId, true)
-    if (this.state.get(sessionId)?.deferred) this.deferFinal(sessionId)
+    if (this.state.get(sessionId)?.deferred) this.deferSummary(sessionId, true)
     return this.snapshot(sessionId)
   }
 
@@ -133,27 +165,33 @@ export default class MeetingControl extends TypertRemoteService {
 
   async summarize(sessionId: string): Promise<MeetingView> {
     await this.makeSummary(sessionId, false, true)
+    if (!this.live.has(sessionId) && this.state.get(sessionId)?.deferred) {
+      this.deferSummary(sessionId, false)
+    }
     return this.snapshot(sessionId)
   }
 
-  private clearFinalTimer(id: string): void {
-    const timer = this.finalTimers.get(id)
+  private clearDeferredTimer(id: string): void {
+    const timer = this.deferredTimers.get(id)
     if (timer) clearInterval(timer)
-    this.finalTimers.delete(id)
+    this.deferredTimers.delete(id)
   }
-  /** Persist the final-summary intent while the Session Agent owns a normal turn. */
-  private deferFinal(id: string): void {
-    if (this.finalTimers.has(id)) return
+  /** Retry only Agent-busy deferrals; paid model failures require manual retry. */
+  private deferSummary(id: string, final: boolean): void {
+    if (this.deferredTimers.has(id)) return
     const timer = setInterval(() => {
-      if (!this.ctx.sessions.get(id as SessionId)) { this.clearFinalTimer(id); return }
-      if (!this.state.get(id)?.deferred) { this.clearFinalTimer(id); return }
-      void this.makeSummary(id, true).then(() => {
-        if (!this.state.get(id)?.deferred) this.clearFinalTimer(id)
+      if (!this.ctx.sessions.get(id as SessionId) || !this.state.get(id)?.deferred) {
+        this.clearDeferredTimer(id)
+        return
+      }
+      void this.makeSummary(id, final).then(() => {
+        if (!this.state.get(id)?.deferred) this.clearDeferredTimer(id)
       }).catch(error => {
-        this.state.set(id, { ...this.state.get(id), error: String(error), deferred: true })
+        this.state.set(id, { ...this.state.get(id), error: String(error), deferred: false })
+        this.clearDeferredTimer(id)
       })
     }, 10_000)
-    this.finalTimers.set(id, timer)
+    this.deferredTimers.set(id, timer)
   }
   private async tick(sessionId: string): Promise<void> {
     const state = this.state.get(sessionId)
@@ -163,14 +201,24 @@ export default class MeetingControl extends TypertRemoteService {
   }
 
   private async makeSummary(sessionId: string, final: boolean, manual = false): Promise<void> {
-    if (this.summaries.has(sessionId)) {
-      await this.summaries.get(sessionId)
-      if (!final) return
-      // A regular checkpoint cannot satisfy the explicit final-summary intent.
+    const current = this.summaries.get(sessionId)
+    if (current) {
+      if (!final || current.final) return current.task
+      // One final pass follows the active regular checkpoint, shared by all waiters.
+      const task = current.task.then(() => this.generate(sessionId, true, manual))
+      const next = { task, final: true }
+      this.summaries.set(sessionId, next)
+      try { await task } finally {
+        if (this.summaries.get(sessionId) === next) this.summaries.delete(sessionId)
+      }
+      return
     }
     const task = this.generate(sessionId, final, manual)
-    this.summaries.set(sessionId, task)
-    try { await task } finally { this.summaries.delete(sessionId) }
+    const entry = { task, final }
+    this.summaries.set(sessionId, entry)
+    try { await task } finally {
+      if (this.summaries.get(sessionId) === entry) this.summaries.delete(sessionId)
+    }
   }
 
   private async generate(sessionId: string, final: boolean, manual: boolean): Promise<void> {
@@ -203,37 +251,55 @@ export default class MeetingControl extends TypertRemoteService {
     const provider = route?.provider ?? agent?.options.provider ?? defaults?.provider
     const model = route?.model ?? agent?.options.model ?? defaults?.model
     if (!provider || !model) {
-      this.state.set(sessionId, { ...before, error: '无法确定当前 Session 的 LLM 模型', deferred: true })
+      const error = new Error('无法确定当前 Session 的 LLM 模型')
+      this.state.set(sessionId, { ...before, error: error.message, deferred: false })
+      if (manual || final) throw error
       return
     }
-    this.state.set(sessionId, { ...before, busy: true, error: undefined })
-    const start = Math.max(0, Math.min(covered, snapshot.segments.length))
-    const lines = snapshot.segments.slice(start).map(line =>
-      '[' + (line.startMs / 1000).toFixed(1) + 's] '
-      + (line.speakerId ?? '未知说话人') + ': ' + line.text).join('\n')
-    const prompt = [
-      '你是会议纪要整理助手。仅根据提供的原文更新会议纪要，不要编造事实、决定或行动项。',
-      '以中文 Markdown 输出：## 主题、## 关键讨论、## 已明确决定、## 待办与负责人、## 未解决问题。',
-      '如缺少信息请明确写“尚未提及”。以下为之前的纪要及新原文，合并而非重复。',
-      '既有纪要：\n' + previous.replace(/<!-- meeting-covered: \d+ -->/, '').slice(-14_000),
-      '新增会议原文：\n' + (lines || snapshot.segments.map(s => s.text).join('\n')).slice(-25_000),
-      ...(final ? ['这是停止录音后的最终总结，请完整收束已有内容。'] : []),
-    ].join('\n\n')
+    this.state.set(sessionId, { ...before, busy: true, deferred: false, error: undefined })
+    let cursor = Math.max(0, Math.min(covered, snapshot.segments.length))
+    let summary = previous
     try {
-      const assembler = new BlockAssembler()
-      for await (const chunk of this.ctx.llm.stream({
-        provider, model, system: '请严格保持内容来源准确，输出可读 Markdown；不要调用工具。',
-        messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
-        maxTokens: 2048,
-        sessionId: session.id,
-      })) assembler.push(chunk)
-      if (assembler.finish.kind !== 'stop') throw new Error('总结模型未正常完成：' + assembler.finish.kind)
-      const result = assembler.blocks().filter(block => block.type === 'text')
-        .map(block => block.text).join('').trim()
-      if (!result) throw new Error('模型未生成总结内容')
-      const body = '<!-- meeting-covered: ' + snapshot.segments.length + ' -->\n'
-        + '# 会议总结\n\n' + result + '\n'
-      await store.saveSummary(sessionId, body)
+      // Advance the durable cursor only for whole segments actually sent to the LLM.
+      do {
+        const lines: string[] = []
+        let length = 0
+        let end = cursor
+        while (end < snapshot.segments.length) {
+          const line = snapshot.segments[end]!
+          const row = '[' + (line.startMs / 1000).toFixed(1) + 's] '
+            + (line.speakerId ?? '未知说话人') + ': ' + line.text
+          if (lines.length && length + row.length + 1 > 25_000) break
+          lines.push(row)
+          length += row.length + 1
+          end++
+        }
+        const last = end === snapshot.segments.length
+        const prompt = [
+          '你是会议纪要整理助手。仅根据提供的原文更新会议纪要，不要编造事实、决定或行动项。',
+          '以中文 Markdown 输出：## 主题、## 关键讨论、## 已明确决定、## 待办与负责人、## 未解决问题。',
+          '如缺少信息请明确写“尚未提及”。以下为之前的纪要及新原文，合并而非重复。',
+          '既有纪要：\n' + summary.replace(/<!-- meeting-covered: \d+ -->/, '').slice(-14_000),
+          '新增会议原文：\n' + (lines.join('\n') || '（无新增原文）'),
+          ...(final && last ? ['这是停止录音后的最终总结，请完整收束已有内容。'] : []),
+        ].join('\n\n')
+        const assembler = new BlockAssembler()
+        for await (const chunk of this.ctx.llm.stream({
+          provider, model, system: '请严格保持内容来源准确，输出可读 Markdown；不要调用工具。',
+          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+          maxTokens: 2048,
+          sessionId: session.id,
+        })) assembler.push(chunk)
+        if (assembler.finish.kind !== 'stop') throw new Error('总结模型未正常完成：' + assembler.finish.kind)
+        const result = assembler.blocks().filter(block => block.type === 'text')
+          .map(block => block.text).join('').trim()
+        if (!result) throw new Error('模型未生成总结内容')
+        const body = '<!-- meeting-covered: ' + end + ' -->\n'
+          + '# 会议总结\n\n' + result + '\n'
+        await store.saveSummary(sessionId, body)
+        summary = body
+        cursor = end
+      } while (cursor < snapshot.segments.length)
       const now = Date.now()
       this.state.set(sessionId, { updatedAt: now,
         nextAt: now + this.config.summaryIntervalMs, busy: false, deferred: false })
