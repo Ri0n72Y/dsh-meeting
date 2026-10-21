@@ -3,5 +3,18 @@
   "include": [
     "tests/**/*.ts",
     "scripts/**/*.mts"
-  ]
+  ],
+  "compilerOptions": {
+    "paths": {
+      "@ri0n72y/dsh-meeting-capture": [
+        "./packages/meeting-capture/src/index.ts"
+      ],
+      "@ri0n72y/dsh-meeting-context": [
+        "./packages/meeting-context/src/index.ts"
+      ],
+      "@ri0n72y/dsh-meeting-speaker": [
+        "./packages/meeting-speaker/src/index.ts"
+      ]
+    }
+  }
 }
