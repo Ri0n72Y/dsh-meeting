@@ -2,7 +2,7 @@
 import { createRequire } from 'node:module'
 
 interface NativeLoopback {
-  startSystemAudio(onChunk: (pcm48kStereo: Buffer | null) => void): void
+  startSystemAudio(onChunk: (pcm48kStereo: Buffer | number | null) => void): void
   stop(): void
 }
 interface LoopbackModule { LoopbackCapture: new () => NativeLoopback }
@@ -28,7 +28,7 @@ export function downmix48k(chunk: Buffer): Float32Array {
  * Overrun is an explicit failure, not unbounded memory usage or silent data loss. */
 export class WindowsLoopback {
   private native: NativeLoopback | undefined
-  private readonly queued: Float32Array[] = []
+  private readonly queued: (Float32Array | { silenceSamples: number })[] = []
   private pending = 0
   private draining: Promise<void> | null = null
   private error: Error | undefined
@@ -64,16 +64,16 @@ export class WindowsLoopback {
         }
         if (this.stopped || this.failedIntake) return
         try {
+          if (typeof bytes === 'number') {
+            this.queueSilence(bytes)
+            return
+          }
           // Native WASAPI chunks need not end on a 3-stereo-frame boundary.
           const joined = this.carry.length ? Buffer.concat([this.carry, bytes]) : Buffer.from(bytes)
           const whole = Math.floor(joined.length / 12) * 12
           this.carry = Buffer.from(joined.subarray(whole))
           if (!whole) return
-          const samples = downmix48k(joined.subarray(0, whole))
-          this.pending += samples.length
-          if (this.pending > 16_000 * 3) throw new Error('WASAPI delivery exceeded 3 seconds of buffered audio')
-          this.queued.push(samples)
-          this.startDrain()
+          this.enqueue(downmix48k(joined.subarray(0, whole)))
         } catch (cause) { this.fail(cause) }
       })
     } catch (error) {
@@ -81,6 +81,39 @@ export class WindowsLoopback {
       this.native = undefined
       throw error
     }
+  }
+
+  private enqueue(samples: Float32Array): void {
+    this.pending += samples.length
+    if (this.pending > 16_000 * 3) throw new Error('WASAPI delivery exceeded 3 seconds of buffered audio')
+    this.queued.push(samples)
+    this.startDrain()
+  }
+
+  /** A native gap is a count of missing 48 kHz frames, not an allocated PCM buffer. */
+  private queueSilence(frames: number): void {
+    if (!Number.isSafeInteger(frames) || frames < 1) {
+      throw new Error('Invalid WASAPI silence frame count')
+    }
+    if (this.carry.length) {
+      const needed = (12 - this.carry.length) / 4
+      if (frames < needed) {
+        this.carry = Buffer.concat([this.carry, Buffer.alloc(frames * 4)])
+        return
+      }
+      const padded = Buffer.alloc(12)
+      this.carry.copy(padded)
+      this.carry = Buffer.alloc(0)
+      this.enqueue(downmix48k(padded))
+      frames -= needed
+    }
+    const samples = Math.floor(frames / 3)
+    if (samples) {
+      this.queued.push({ silenceSamples: samples })
+      this.startDrain()
+    }
+    const partial = frames % 3
+    if (partial) this.carry = Buffer.alloc(partial * 4)
   }
 
   private startDrain(): void {
@@ -93,16 +126,30 @@ export class WindowsLoopback {
 
   private async drain(): Promise<void> {
     while (this.queued.length) {
-      const samples = this.queued.shift()!
-      try {
-        // Accepted PCM must be attempted even after intake failure.
-        await this.push(samples)
-        this.samples += samples.length
-      } catch (error) {
-        // A failed disk write is reported, never counted as persisted.
-        this.fail(error)
-      } finally {
-        this.pending -= samples.length
+      const item = this.queued.shift()!
+      if (item instanceof Float32Array) {
+        try {
+          await this.push(item)
+          this.samples += item.length
+        } catch (error) {
+          this.fail(error)
+        } finally {
+          this.pending -= item.length
+        }
+      } else {
+        // Reuse a bounded 5-second zero buffer regardless of meeting length.
+        const silent = new Float32Array(16_000 * 5)
+        let remaining = item.silenceSamples
+        while (remaining > 0) {
+          const count = Math.min(remaining, silent.length)
+          try {
+            await this.push(silent.subarray(0, count))
+            this.samples += count
+          } catch (error) {
+            this.fail(error)
+          }
+          remaining -= count
+        }
       }
     }
   }

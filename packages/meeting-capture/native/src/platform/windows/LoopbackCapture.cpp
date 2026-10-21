@@ -390,7 +390,7 @@ HRESULT CLoopbackCapture::OnSampleReady(IMFAsyncResult *pResult)
 //  Copies the given PCM bytes and hands them off to the stored JS callback
 //  via the ThreadSafeFunction. Safe to call from the MF work-queue thread.
 //
-void CLoopbackCapture::EmitAudioData(const BYTE *data, UINT32 byteCount)
+void CLoopbackCapture::EmitAudioData(const BYTE *data, UINT32 byteCount, UINT64 silenceFrames)
 {
    if (!m_tsfnActive || (byteCount != 0 && data == nullptr))
    {
@@ -399,6 +399,7 @@ void CLoopbackCapture::EmitAudioData(const BYTE *data, UINT32 byteCount)
 
    auto packet = std::make_unique<AudioDataPacket>();
    packet->byteCount = byteCount;
+   packet->silenceFrames = silenceFrames;
    if (byteCount != 0)
    {
       packet->data = std::make_unique<BYTE[]>(byteCount);
@@ -413,7 +414,11 @@ void CLoopbackCapture::EmitAudioData(const BYTE *data, UINT32 byteCount)
        [](Napi::Env env, Napi::Function jsCallback, AudioDataPacket *pkt)
        {
           std::unique_ptr<AudioDataPacket> owned(pkt);
-          if (owned->byteCount == 0)
+          if (owned->silenceFrames != 0)
+          {
+             jsCallback.Call({Napi::Number::New(env, static_cast<double>(owned->silenceFrames))});
+          }
+          else if (owned->byteCount == 0)
           {
              jsCallback.Call({env.Null()});
           }
@@ -498,6 +503,25 @@ HRESULT CLoopbackCapture::OnAudioSampleRequested()
 
       // Get sample buffer
       RETURN_IF_FAILED(m_AudioCaptureClient->GetBuffer(&Data, &FramesAvailable, &dwCaptureFlags, &u64DevicePosition, &u64QPCPosition));
+
+      // WASAPI may omit packets while the output device is inactive. Its
+      // stream-relative frame position preserves gaps between received packets.
+      // A count marker keeps long silent spans out of the N-API byte queue.
+      if (!(dwCaptureFlags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR))
+      {
+         if ((!m_readPacket || m_positionValid) && u64DevicePosition > m_nextFramePosition)
+         {
+            EmitAudioData(nullptr, 0, u64DevicePosition - m_nextFramePosition);
+         }
+         m_nextFramePosition = u64DevicePosition + FramesAvailable;
+         m_positionValid = true;
+      }
+      else
+      {
+         // Invalid positions cannot safely anchor a synthetic silent interval.
+         m_positionValid = false;
+      }
+      m_readPacket = true;
 
       // Emit every rendered frame, including WASAPI silent packets. Dropping
       // silence would compress the meeting audio timeline and corrupt ASR time.

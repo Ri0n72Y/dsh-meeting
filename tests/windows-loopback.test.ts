@@ -15,7 +15,7 @@ test('non-Windows devices are rejected before attempting native imports', () => 
 })
 
 test('overrun stops intake but persists every PCM block admitted before failure', async () => {
-  let callback!: (bytes: Buffer | null) => void
+  let callback!: (bytes: Buffer | number | null) => void
   let stopCalls = 0
   let finish!: Promise<{ samples: number; error?: string }>
   let resolveFirst!: () => void
@@ -42,7 +42,7 @@ test('overrun stops intake but persists every PCM block admitted before failure'
 })
 
 test('native stop failure still finishes accepted PCM before reporting error', async () => {
-  let callback!: (bytes: Buffer | null) => void
+  let callback!: (bytes: Buffer | number | null) => void
   let release!: () => void
   const block = new Promise<void>(resolve => { release = resolve })
   const delivered: number[] = []
@@ -64,7 +64,7 @@ test('native stop failure still finishes accepted PCM before reporting error', a
 })
 
 test('stop waits for the native terminal marker behind the final audio callbacks', async () => {
-  let callback!: (bytes: Buffer | null) => void
+  let callback!: (bytes: Buffer | number | null) => void
   let stopNative = 0
   const writes: number[] = []
   const source = new WindowsLoopback(async samples => {
@@ -94,7 +94,7 @@ test('stop waits for the native terminal marker behind the final audio callbacks
 })
 
 test('silent PCM consumes timeline samples instead of being omitted', async () => {
-  let callback!: (bytes: Buffer | null) => void
+  let callback!: (bytes: Buffer | number | null) => void
   const observed: Float32Array[] = []
   const source = new WindowsLoopback(async pcm => { observed.push(pcm) }, () => {}, () => ({
     startSystemAudio(cb) { callback = cb },
@@ -105,4 +105,49 @@ test('silent PCM consumes timeline samples instead of being omitted', async () =
   const receipt = await source.stop()
   assert.equal(receipt.samples, 16_000)
   assert.ok(observed.flatMap(samples => [...samples]).every(sample => sample === 0))
+})
+
+test('WASAPI frame-position gaps preserve absolute audio offsets without dense native buffers', async () => {
+  let callback!: (bytes: Buffer | number | null) => void
+  const writes: Float32Array[] = []
+  const source = new WindowsLoopback(async pcm => { writes.push(pcm.slice()) }, () => {}, () => ({
+    startSystemAudio(cb) { callback = cb },
+    stop() { queueMicrotask(() => callback(null)) },
+  }))
+  const voiced = Buffer.alloc(24)
+  for (let i = 0; i < voiced.length; i += 2) voiced.writeInt16LE(16_384, i)
+  source.start()
+  callback(voiced)        // two 16 kHz output samples
+  callback(48_000)       // one second without WASAPI packets
+  callback(voiced)
+  const receipt = await source.stop()
+  assert.equal(receipt.samples, 16_004)
+  assert.deepEqual(writes.map(chunk => chunk.length), [2, 16_000, 2])
+  assert.ok(writes[1]!.every(value => value === 0))
+  assert.ok(writes[0]!.every(value => value > 0))
+  assert.ok(writes[2]!.every(value => value > 0))
+})
+
+test('long native silence markers drain in bounded chunks and retain decimator carry', async () => {
+  let callback!: (bytes: Buffer | number | null) => void
+  const sizes: number[] = []
+  let nonzero = 0
+  const source = new WindowsLoopback(async pcm => {
+    sizes.push(pcm.length)
+    if (pcm.some(value => value !== 0)) nonzero++
+  }, () => {}, () => ({
+    startSystemAudio(cb) { callback = cb },
+    stop() { queueMicrotask(() => callback(null)) },
+  }))
+  source.start()
+  // One stereo 48 kHz frame stays in the downmix carry until two more arrive.
+  const partial = Buffer.alloc(4)
+  partial.writeInt16LE(16_384, 0)
+  callback(partial)
+  callback(48_000 * 30 + 2)
+  const receipt = await source.stop()
+  assert.equal(receipt.samples, 16_000 * 30 + 1)
+  assert.equal(nonzero, 1)
+  assert.deepEqual(sizes, [1, ...Array(6).fill(80_000)])
+  assert.ok(sizes.every(size => size <= 80_000))
 })

@@ -25,6 +25,7 @@ struct AudioDataPacket
 {
    std::unique_ptr<BYTE[]> data;
    UINT32 byteCount = 0;
+   UINT64 silenceFrames = 0;
 };
 
 class CLoopbackCapture : public RuntimeClass<RuntimeClassFlags<ClassicCom>, FtmBase, IActivateAudioInterfaceCompletionHandler>
@@ -110,7 +111,7 @@ private:
    HRESULT SetDeviceStateErrorIfFailed(HRESULT hr);
 
    // Queues PCM or a zero-byte end marker, in one FIFO N-API lane.
-   void EmitAudioData(const BYTE *data, UINT32 byteCount);
+   void EmitAudioData(const BYTE *data, UINT32 byteCount, UINT64 silenceFrames = 0);
 
    // Releases the ThreadSafeFunction's thread reference exactly once.
    void ReleaseThreadSafeFunction();
@@ -146,4 +147,7 @@ private:
    // be invoked safely from the MF work-queue threads.
    Napi::ThreadSafeFunction m_tsfn;
    bool m_tsfnActive = false;
+   UINT64 m_nextFramePosition = 0;
+   bool m_positionValid = false;
+   bool m_readPacket = false;
 };
