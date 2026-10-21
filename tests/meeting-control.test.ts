@@ -112,7 +112,7 @@ test('native stop rejection still cancels and settles capture, releases lease, a
   const timer = setInterval(() => {}, 100_000)
   f.internal.live.set('A', {
     source: { async stop() { throw new Error('WASAPI stop failed') } },
-    startedAt: 1, timer, cancel(error) { cancellation = error.message }, unregisterSource() {}, unregisterSource() {},
+    startedAt: 1, timer, cancel(error) { cancellation = error.message }, unregisterSource() {},
   })
   try {
     await assert.rejects(f.internal.close('A'), /WASAPI stop failed/)
@@ -133,7 +133,7 @@ test('PCM queue failure reported by source.stop still interrupts and finalizes c
   const timer = setInterval(() => {}, 100_000)
   f.internal.live.set('A', {
     source: { async stop() { return { samples: 42, error: 'PCM persistence failed' } } },
-    startedAt: 1, timer, cancel(error) { cancellation = error.message },
+    startedAt: 1, timer, cancel(error) { cancellation = error.message }, unregisterSource() {},
   })
   try {
     await f.internal.close('A')
