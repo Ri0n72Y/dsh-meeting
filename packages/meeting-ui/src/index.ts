@@ -166,7 +166,7 @@ export default class MeetingControl extends TypertRemoteService {
   async summarize(sessionId: string): Promise<MeetingView> {
     await this.makeSummary(sessionId, false, true)
     if (!this.live.has(sessionId) && this.state.get(sessionId)?.deferred) {
-      this.deferSummary(sessionId, false)
+      this.deferSummary(sessionId, false, true)
     }
     return this.snapshot(sessionId)
   }
@@ -177,14 +177,14 @@ export default class MeetingControl extends TypertRemoteService {
     this.deferredTimers.delete(id)
   }
   /** Retry only Agent-busy deferrals; paid model failures require manual retry. */
-  private deferSummary(id: string, final: boolean): void {
+  private deferSummary(id: string, final: boolean, manual = false): void {
     if (this.deferredTimers.has(id)) return
     const timer = setInterval(() => {
       if (!this.ctx.sessions.get(id as SessionId) || !this.state.get(id)?.deferred) {
         this.clearDeferredTimer(id)
         return
       }
-      void this.makeSummary(id, final).then(() => {
+      void this.makeSummary(id, final, manual).then(() => {
         if (!this.state.get(id)?.deferred) this.clearDeferredTimer(id)
       }).catch(error => {
         this.state.set(id, { ...this.state.get(id), error: String(error), deferred: false })

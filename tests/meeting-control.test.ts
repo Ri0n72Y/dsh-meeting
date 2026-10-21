@@ -188,6 +188,9 @@ test('long summaries cover every original segment in bounded, progressive model 
 
 test('stopped Session manual busy summary retries after Agent becomes idle', async () => {
   const f = fixture([{ startMs: 0, endMs: 1000, text: 'real transcript', speakerId: null }])
+  // Existing summary already covers all lines; the user's manual re-run still matters.
+  await f.internal.makeSummary('A', false)
+  assert.deepEqual(f.covered, [1])
   f.setAgentBusy(true)
   const original = globalThis.setInterval
   let fire: (() => void) | undefined
@@ -198,13 +201,14 @@ test('stopped Session manual busy summary retries after Agent becomes idle', asy
   try {
     await f.control.summarize('A')
     assert.equal(f.internal.state.get('A')?.deferred, true)
-    assert.equal(f.prompts.length, 0)
+    assert.equal(f.prompts.length, 1)
     assert.ok(fire)
     f.setAgentBusy(false)
     fire!()
     // Wait for the asynchronous retry task without a 10-second wall-clock delay.
-    for (let i = 0; i < 30 && f.covered.length === 0; i++) await new Promise<void>(r => setImmediate(r))
-    assert.deepEqual(f.covered, [1])
+    for (let i = 0; i < 30 && f.covered.length < 2; i++) await new Promise<void>(r => setImmediate(r))
+    assert.deepEqual(f.covered, [1, 1])
+    assert.equal(f.prompts.length, 2)
     assert.equal(f.internal.state.get('A')?.deferred, false)
     assert.equal(f.internal.deferredTimers.size, 0)
   } finally {
