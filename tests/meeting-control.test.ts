@@ -5,9 +5,8 @@ import MeetingCapture from '../packages/meeting-capture/src/index.js'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  let reject!: (reason: Error) => void
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
-  return { promise, resolve, reject }
+  const promise = new Promise<T>(yes => { resolve = yes })
+  return { promise, resolve }
 }
 
 interface Line { startMs: number; endMs: number; text: string; speakerId: string | null }

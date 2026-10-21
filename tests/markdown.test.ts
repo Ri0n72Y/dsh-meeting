@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MeetingStore } from '../packages/meeting-context/src/store.js'
@@ -23,8 +23,4 @@ test('live Session appends atomically projected Markdown, preserving unknown spe
     assert.equal(await store.readDocument('foo', 'summary.md'), '# 会议总结\n\n完成')
     assert.equal(transcriptMarkdown((await store.read('foo'))!), await store.readDocument('foo', 'transcript.md'))
   } finally { await rm(cwd, { recursive: true, force: true }) }
-})
-test('Markdown rendering does not invent an identified speaker', () => {
-  assert.match(transcriptMarkdown({ sessionId: 'id', phase: 'recording', revision: 1,
-    segments: [{ startMs: 0, endMs: 50, text: '# heading?', speakerId: null }] }), /未知说话人/)
 })

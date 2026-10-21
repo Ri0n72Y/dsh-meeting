@@ -38,7 +38,7 @@ test('recording state after crash or disk error can resume with transcript intac
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
 
-test('writes are serialized and invalid Session ids are rejected', async () => {
+test('concurrent journal writes are serialized', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dsh-meeting-'))
   try {
     const store = new MeetingStore(dir)
@@ -48,8 +48,6 @@ test('writes are serialized and invalid Session ids are rejected', async () => {
       store.append('alpha', { startMs: 2000, endMs: 3000, text: 'two', speakerId: 'Speaker 2' }),
     ])
     assert.equal((await store.read('alpha'))?.segments.length, 2)
-    assert.match(sessionDirectoryName('../escape'), /^[a-f0-9]{64}$/)
-    assert.notEqual(sessionDirectoryName('team:demo'), sessionDirectoryName('team/demo'))
   } finally { await rm(dir, { recursive: true, force: true }) }
 })
 
@@ -63,6 +61,8 @@ test('opaque Session IDs are safe and meeting audio is ignored by workspace Git'
     assert.equal((await store.read('team:demo/meeting.2')), null)
     assert.equal(await readFile(join(root, '.gitignore'), 'utf8'), '*\n!/.gitignore\n')
     assert.match(store.directory('team:demo/meeting.1'), /[a-f0-9]{64}$/)
+    assert.match(sessionDirectoryName('../escape'), /^[a-f0-9]{64}$/)
+    assert.notEqual(sessionDirectoryName('team:demo'), sessionDirectoryName('team/demo'))
   } finally { await rm(cwd, { recursive: true, force: true }) }
 })
 

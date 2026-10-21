@@ -1,0 +1,120 @@
+name: DSH Web integration check
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/meeting-ui/**'
+      - 'packages/meeting-context/src/index.ts'
+      - 'packages/meeting-context/package.json'
+      - 'packages/meeting-context/cordis.patch.yml'
+      - 'packages/meeting-speaker/src/index.ts'
+      - 'packages/meeting-speaker/package.json'
+      - 'packages/meeting-speaker/cordis.patch.yml'
+      - 'packages/meeting-capture/src/index.ts'
+      - 'packages/meeting-capture/package.json'
+      - 'packages/meeting-capture/cordis.patch.yml'
+      - 'bundles/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/web-profile-startup.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/meeting-ui/**'
+      - 'packages/meeting-context/src/index.ts'
+      - 'packages/meeting-context/package.json'
+      - 'packages/meeting-context/cordis.patch.yml'
+      - 'packages/meeting-speaker/src/index.ts'
+      - 'packages/meeting-speaker/package.json'
+      - 'packages/meeting-speaker/cordis.patch.yml'
+      - 'packages/meeting-capture/src/index.ts'
+      - 'packages/meeting-capture/package.json'
+      - 'packages/meeting-capture/cordis.patch.yml'
+      - 'bundles/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/web-profile-startup.yml'
+jobs:
+  web-profile-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      DSH_HOME: ${{ github.workspace }}/.meeting-profile-runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Install Meeting Profile via real DSH CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cli=(pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2)
+          run_cli() { timeout --signal=TERM --kill-after=5s 70s "${cli[@]}" "$@"; }
+          run_cli --profile meeting-runtime --from-default-profile web --dump-default-config > /dev/null
+          run_cli plugin --profile meeting-runtime add ./packages/meeting-context
+          run_cli plugin --profile meeting-runtime add ./packages/meeting-speaker
+          run_cli plugin --profile meeting-runtime add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
+          run_cli plugin --profile meeting-runtime add ./packages/meeting-capture
+          run_cli plugin --profile meeting-runtime add ./packages/meeting-ui
+      - name: Boot the actual DSH Web server and inspect client plugin graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          port=35409
+          timeout --signal=TERM --kill-after=5s 65s pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 --profile meeting-runtime --no-open --port "$port" > "$RUNNER_TEMP/meeting-web.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 50); do
+            if curl --silent --show-error --max-time 2 "http://127.0.0.1:$port/" > "$RUNNER_TEMP/meeting-index.html" 2>/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then
+            echo "::error::DSH Web did not serve the shell HTML"
+            tail -n 130 "$RUNNER_TEMP/meeting-web.log"
+            exit 1
+          fi
+          echo "DSH_WEB_HTTP_PASS"
+          # DSH's boot graph is part of the authenticated HTML, not the unauthenticated shell.
+          auth_url=$(grep -Eo 'http://127[.]0[.]0[.]1:[0-9]+/[?]token=[A-Za-z0-9_-]+' "$RUNNER_TEMP/meeting-web.log" | tail -n 1)
+          if [ -z "$auth_url" ]; then
+            echo "::error::DSH did not print an authenticated Web URL"
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --max-time 10 \
+            --cookie-jar "$RUNNER_TEMP/meeting-cookie.txt" \
+            "$auth_url" > "$RUNNER_TEMP/meeting-index.html"
+          if grep -Fq "@ri0n72y/dsh-meeting-ui" "$RUNNER_TEMP/meeting-index.html"; then
+            echo "MEETING_UI_CLIENT_MANIFEST_PASS"
+          else
+            echo "::error::DSH Client manifest does not include Meeting UI"
+            echo "Authenticated HTML bytes: $(wc -c < "$RUNNER_TEMP/meeting-index.html")"
+            echo "Client boot marker count: $(grep -o '__DSH_BOOT__' "$RUNNER_TEMP/meeting-index.html" | wc -l)"
+            tail -n 40 "$RUNNER_TEMP/meeting-web.log" | sed -E 's/(token=)[A-Za-z0-9_-]+/\1[REDACTED]/g'
+            exit 1
+          fi
+          # One Gateway call verifies Host registration, dispatch and error transport.
+          printf '{"type":"client-request","rpcId":"proof-snapshot","method":"meeting/snapshot","payload":{"args":{"sessionId":"meeting-ci-nonexistent"}}}' > "$RUNNER_TEMP/meeting-request.json"
+          curl --fail --silent --show-error --max-time 10 \
+            -b "$RUNNER_TEMP/meeting-cookie.txt" \
+            -H 'content-type: application/json' \
+            --data-binary "@$RUNNER_TEMP/meeting-request.json" \
+            "http://127.0.0.1:$port/api/meeting/snapshot" > "$RUNNER_TEMP/meeting-response.json"
+          python3 - "$RUNNER_TEMP/meeting-response.json" <<'PY'
+          import json,sys
+          with open(sys.argv[1],encoding='utf8') as file: obj=json.load(file)
+          assert obj.get('type')=='server-response', obj
+          result=obj.get('result',{})
+          assert result.get('ok') is False, obj
+          assert 'Meeting requires a live DSH Session' in result.get('error',{}).get('message',''), obj
+          print('MEETING_GATEWAY_ROUNDTRIP_PASS snapshot')
+          PY
