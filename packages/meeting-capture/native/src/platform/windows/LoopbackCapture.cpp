@@ -373,16 +373,17 @@ HRESULT CLoopbackCapture::OnFinishCapture(IMFAsyncResult *pResult)
 //
 HRESULT CLoopbackCapture::OnSampleReady(IMFAsyncResult *pResult)
 {
-   if (SUCCEEDED(OnAudioSampleRequested()))
+   const HRESULT hr = OnAudioSampleRequested();
+   // Re-arm only while capture is still active. Stop and finish use this lock.
+   auto lock = m_CritSec.lock();
+   if (SUCCEEDED(hr))
    {
-      // Re-queue work item for next sample
       if (m_DeviceState == DeviceState::Capturing)
       {
-         // Re-queue work item for next sample
          return MFPutWaitingWorkItem(m_SampleReadyEvent.get(), 0, m_SampleReadyAsyncResult.get(), &m_SampleReadyKey);
       }
    }
-   else
+   else if (m_DeviceState == DeviceState::Capturing)
    {
       m_DeviceState = DeviceState::Error;
    }
