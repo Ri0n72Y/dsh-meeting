@@ -12,7 +12,7 @@ if(WIN32)
     FetchContent_Declare(
         wil
         GIT_REPOSITORY https://github.com/microsoft/wil.git
-        GIT_TAG master
+        GIT_TAG f6f3069ab39fb19c1f89fa5f2d3aa8a1118ace43
         EXCLUDE_FROM_ALL
         SYSTEM
     )

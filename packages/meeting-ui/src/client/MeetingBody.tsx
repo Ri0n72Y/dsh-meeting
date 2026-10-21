@@ -43,11 +43,11 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
       try {
         // In DSH the Remote stream owns its connection and is disposed on abort.
         for await (const frame of meetingRemote.watch(sessionId, controller.signal)) {
-          if (controller.signal.aborted) return
+          if (controller.signal.aborted || currentSession.current !== sessionId) return
           setData(frame)
         }
       } catch (cause) {
-        if (!controller.signal.aborted) setError(String(cause))
+        if (!controller.signal.aborted && currentSession.current === sessionId) setError(String(cause))
       }
     }
     void listen()

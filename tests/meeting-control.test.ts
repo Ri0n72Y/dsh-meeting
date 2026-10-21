@@ -46,6 +46,7 @@ function fixture(lines: Line[] = []) {
     speechToText: { snapshot: () => ({ providers: [{ id: 'sensevoice-local', preparation: { phase: 'ready' } }] }) },
     agents: { get: () => agentBusy ? { status: 'running', options: { provider: 'p', model: 'm' } } : undefined },
     get: () => undefined,
+    logger: () => ({ warn(_message: string) {} }),
     llm: {
       async *stream(request: { messages: Array<{ content: Array<{ text: string }> }> }) {
         prompts.push(request.messages[0]!.content[0]!.text)
@@ -215,4 +216,27 @@ test('stopped Session manual busy summary retries after Agent becomes idle', asy
     for (const timer of f.internal.deferredTimers.values()) clearInterval(timer)
     globalThis.setInterval = original
   }
+})
+
+test('start always releases its ownership guard even if native start and capture cleanup both fail', async () => {
+  const f = fixture()
+  let starts = 0
+  let cancels = 0
+  let cleanups = 0
+  f.context.meetingCapture.start = async () => {
+    starts++
+    return { cancel() { cancels++ } }
+  }
+  f.context.meetingCapture.stop = async () => {
+    cleanups++
+    throw new Error('capture cleanup failed')
+  }
+  // On the CI Linux Host the native startup must fail before device acquisition.
+  // The same cleanup finally path is used for Windows native-start exceptions.
+  if (process.platform === 'win32' && process.arch === 'x64') return
+  await assert.rejects(f.control.start('A'), /Windows x64/)
+  await assert.rejects(f.control.start('A'), /Windows x64/)
+  assert.equal(starts, 2)
+  assert.equal(cancels, 2)
+  assert.equal(cleanups, 2)
 })

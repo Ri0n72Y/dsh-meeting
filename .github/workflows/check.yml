@@ -70,6 +70,11 @@ jobs:
         run: |
           node -e "const addon = require('./packages/meeting-capture/native/build/Release/loopback_capture_addon.node'); const capture = new addon.LoopbackCapture(); if (typeof capture.startSystemAudio !== 'function' || typeof capture.stop !== 'function') process.exit(1); console.log('MEETING_WASAPI_NATIVE_LOAD_PASS')"
           pnpm exec tsx --test tests/windows-loopback.test.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meeting-wasapi-win32-x64-node24
+          path: packages/meeting-capture/native/build/Release/loopback_capture_addon.node
+          if-no-files-found: error
 
   web-profile-startup:
     runs-on: ubuntu-latest

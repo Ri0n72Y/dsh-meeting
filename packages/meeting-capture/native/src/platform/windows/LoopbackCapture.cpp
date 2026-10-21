@@ -383,29 +383,6 @@ HRESULT CLoopbackCapture::OnSampleReady(IMFAsyncResult *pResult)
    return S_OK;
 }
 
-static bool IsBufferSilent(const BYTE *pData, UINT32 numFrames, WAVEFORMATEX *format, double silenceThresholdDb = -50.0)
-{
-   if (format->wBitsPerSample != 16)
-   {
-      // You can add support for 24-bit, float, etc., but let's keep it simple.
-      throw std::runtime_error("Only 16-bit PCM supported in this example");
-   }
-
-   const int16_t *samples = reinterpret_cast<const int16_t *>(pData);
-   int numSamples = numFrames * format->nChannels;
-
-   double threshold = pow(10.0, silenceThresholdDb / 20.0) * 32768.0;
-
-   for (int i = 0; i < numSamples; ++i)
-   {
-      if (std::abs(samples[i]) > threshold)
-      {
-         return false; // Not silent
-      }
-   }
-
-   return true; // All samples below threshold
-}
 
 //
 //  EmitAudioData()
