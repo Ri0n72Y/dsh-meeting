@@ -25,7 +25,7 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
   const [data, setData] = useState<MeetingView | null>(null)
   const [selected, setSelected] = useState<'transcript' | 'summary'>('transcript')
   const [action, setAction] = useState<'start' | 'stop' | 'summarize' | 'prepare' | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ sessionId: string; message: string } | null>(null)
   const [now, setNow] = useState(Date.now())
   const scroll = useRef<HTMLDivElement>(null)
   const anchored = useRef(true)
@@ -47,13 +47,16 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
           setData(frame)
         }
       } catch (cause) {
-        if (!controller.signal.aborted && currentSession.current === sessionId) setError(String(cause))
+        if (!controller.signal.aborted && currentSession.current === sessionId) setError({ sessionId, message: String(cause) })
       }
     }
     void listen()
     return () => { controller.abort() }
   }, [sessionId, meetingRemote])
-  const content = selected === 'transcript' ? (data?.transcriptText ?? '') : (data?.summary ?? '')
+  // Effects clear old state after commit; render must never expose another Session's document.
+  const view = data?.sessionId === sessionId ? data : null
+  const visibleError = error?.sessionId === sessionId ? error.message : null
+  const content = selected === 'transcript' ? (view?.transcriptText ?? '') : (view?.summary ?? '')
   useLayoutEffect(() => {
     const el = scroll.current
     if (el && anchored.current) el.scrollTop = el.scrollHeight
@@ -68,51 +71,51 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
       const value = valueOf(await result)
       if (currentSession.current === sessionId) setData(value)
     } catch (cause) {
-      if (currentSession.current === sessionId) setError(String(cause))
+      if (currentSession.current === sessionId) setError({ sessionId, message: String(cause) })
     } finally {
       if (currentSession.current === sessionId) setAction(null)
     }
   }
-  const elapsed = data?.startedAt && data.recording
+  const elapsed = view?.startedAt && data.recording
     ? Math.max(0, Math.floor((now - data.startedAt) / 1000)) : 0
   const elapsedText = [Math.floor(elapsed / 3600), Math.floor(elapsed / 60) % 60, elapsed % 60]
     .map(n => String(n).padStart(2, '0')).join(':')
   return <div className={css.root} data-meeting-session={sessionId}>
     <header className={css.header}>
       <div className={css.status}>
-        <span aria-live="polite" className={data?.recording ? css.recording : css.idle}>
-          {data?.recording ? '● 正在录制' : data?.phase === 'stopped' ? '已完成' : data?.phase === 'interrupted' ? '已中断' : '未开始'}
+        <span aria-live="polite" className={view?.recording ? css.recording : css.idle}>
+          {view?.recording ? '● 正在录制' : view?.phase === 'stopped' ? '已完成' : view?.phase === 'interrupted' ? '已中断' : '未开始'}
         </span>
-        {data?.recording && <span>{elapsedText}</span>}
+        {view?.recording && <span>{elapsedText}</span>}
       </div>
       <div className={css.actions}>
-        {data?.recording
+        {view?.recording
           ? <Button variant="outline" size="sm" disabled={action !== null} onClick={() => void run('stop')}>停止会议</Button>
-          : <Button variant="primary" size="sm" disabled={action !== null || data?.phase === 'stopped' || data?.recognizerPhase !== 'ready'}
+          : <Button variant="primary" size="sm" disabled={action !== null || view?.phase === 'stopped' || view?.recognizerPhase !== 'ready'}
             onClick={() => void run('start')}>开始会议</Button>}
       </div>
       <div className={css.detail}>系统播放音频 · Windows WASAPI Loopback</div>
-      <div className={css.detail}>SenseVoice · {data?.recognizerPhase === 'ready' ? '已就绪' :
-        data?.recognizerPhase === 'missing' ? '未安装' : data?.recognizerPhase ?? '检测中'} · 已识别 {data?.transcript ?? 0} 段</div>
+      <div className={css.detail}>SenseVoice · {view?.recognizerPhase === 'ready' ? '已就绪' :
+        view?.recognizerPhase === 'missing' ? '未安装' : view?.recognizerPhase ?? '检测中'} · 已识别 {view?.transcript ?? 0} 段</div>
       {data && data.recognizerPhase !== 'ready' && data.recognizerPhase !== 'missing' && (
         <Button variant="outline" size="sm"
           disabled={action !== null || ['downloading','checking','loading','waking','cancelling'].includes(data.recognizerPhase)}
           onClick={() => void run('prepare')}>准备 SenseVoice</Button>
       )}
-      {data?.recognizerPhase === 'missing' && <div className={css.detail}>请先安装 DSH 官方语音输入插件。</div>}
+      {view?.recognizerPhase === 'missing' && <div className={css.detail}>请先安装 DSH 官方语音输入插件。</div>}
     </header>
-    {(error || data?.error) && <p role="alert" className={css.error}>{error || data?.error}</p>}
+    {(visibleError || view?.error) && <p role="alert" className={css.error}>{visibleError || view?.error}</p>}
     <div className={css.tabRow}>
       <SegmentedControl id="meeting-document" value={selected} label="会议文档"
         options={tabs} onChange={setSelected} />
       {selected === 'summary' &&
-        <Button variant="ghost" size="sm" disabled={action !== null || !data || data.transcript === 0}
+        <Button variant="ghost" size="sm" disabled={action !== null || !view || data.transcript === 0}
           onClick={() => void run('summarize')}>立即总结</Button>}
     </div>
     {selected === 'summary' &&
       <div className={css.summaryTimes}>
-        {data?.summaryBusy ? '正在生成总结…' : data?.summaryDeferred ? '等待当前 Agent 空闲' :
-          '上次更新 ' + formatTime(data?.summaryUpdatedAt) + ' · 下次 ' + formatTime(data?.nextSummaryAt)}
+        {view?.summaryBusy ? '正在生成总结…' : view?.summaryDeferred ? '等待当前 Agent 空闲' :
+          '上次更新 ' + formatTime(view?.summaryUpdatedAt) + ' · 下次 ' + formatTime(view?.nextSummaryAt)}
       </div>}
     <div id={'meeting-document-' + selected + '-panel'} role="tabpanel"
       aria-labelledby={'meeting-document-' + selected} ref={scroll} className={css.document}
@@ -123,7 +126,7 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
     </div>
     <footer className={css.footer}>
       <span title={sessionId}>当前 Session · {sessionId.slice(0, 12)}…</span>
-      <span>{data?.recording ? '录音保存在当前 Workspace' : '只读预览'}</span>
+      <span>{view?.recording ? '录音保存在当前 Workspace' : '只读预览'}</span>
     </footer>
   </div>
 }

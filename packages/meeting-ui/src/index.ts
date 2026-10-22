@@ -31,7 +31,7 @@ export default class MeetingControl extends TypertRemoteService {
   private readonly summaryJobs = new SummaryJobs((id, final, manual) => this.generate(id, final, manual))
   private starting = false
   private readonly deferredTimers = new Map<string, ReturnType<typeof setInterval>>()
-  private readonly state = new Map<string, { updatedAt?: number; nextAt?: number; error?: string; deferred?: boolean; busy?: boolean }>()
+  private readonly state = new Map<string, { updatedAt?: number; nextAt?: number; error?: string; captureError?: string; deferred?: boolean; busy?: boolean }>()
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'meetingControl', { namespace: 'meeting' })
@@ -76,7 +76,7 @@ export default class MeetingControl extends TypertRemoteService {
       summary, transcriptText, recognizerPhase: recognizer?.preparation.phase ?? 'missing',
       summaryUpdatedAt: options?.updatedAt, nextSummaryAt: options?.nextAt,
       summaryBusy: options?.busy ?? false, summaryDeferred: options?.deferred ?? false,
-      error: options?.error ?? state?.interruption }
+      error: options?.captureError ?? options?.error ?? state?.interruption }
   }
 
   async *watch(sessionId: string, signal: AbortSignal): AsyncIterable<MeetingView> {
@@ -105,7 +105,7 @@ export default class MeetingControl extends TypertRemoteService {
       const source = new WindowsLoopback(
         samples => this.ctx.meetingCapture.push(sessionId, samples),
         error => {
-          this.state.set(sessionId, { ...this.state.get(sessionId), error: error.message })
+          this.state.set(sessionId, { ...this.state.get(sessionId), captureError: error.message })
           // Drain source PCM before cancelling the capture.
           void this.close(sessionId).catch(e => this.ctx.logger('meeting-control').warn(String(e)))
         },
@@ -152,24 +152,24 @@ export default class MeetingControl extends TypertRemoteService {
         const ended = await record.source.stop()
         if (ended.error) {
           record.cancel(new Error(ended.error))
-          this.state.set(sessionId, { ...this.state.get(sessionId), error: ended.error })
+          this.state.set(sessionId, { ...this.state.get(sessionId), captureError: ended.error })
         }
       } catch (error) {
         failure = error
         const reason = error instanceof Error ? error : new Error(String(error))
         record.cancel(reason)
-        this.state.set(sessionId, { ...this.state.get(sessionId), error: reason.message })
+        this.state.set(sessionId, { ...this.state.get(sessionId), captureError: reason.message })
       } finally {
         // Keep the device lease while both the native source and capture settle.
         try {
           const receipt = await this.ctx.meetingCapture.stop(sessionId)
           if (receipt.interrupted || receipt.errors.length) this.state.set(sessionId, {
             ...this.state.get(sessionId),
-            error: this.state.get(sessionId)?.error ?? (receipt.errors.slice(-3).join('; ') || 'Meeting capture interrupted'),
+            captureError: this.state.get(sessionId)?.captureError ?? (receipt.errors.slice(-3).join('; ') || 'Meeting capture interrupted'),
           })
         } catch (error) {
           failure ??= error
-          this.state.set(sessionId, { ...this.state.get(sessionId), error: String(failure) })
+          this.state.set(sessionId, { ...this.state.get(sessionId), captureError: String(failure) })
         } finally {
           record.unregisterSource()
           if (this.live.get(sessionId) === record) this.live.delete(sessionId)
@@ -304,10 +304,10 @@ export default class MeetingControl extends TypertRemoteService {
         cursor = end
       } while (cursor < snapshot.segments.length)
       const now = Date.now()
-      this.state.set(sessionId, { updatedAt: now,
-        nextAt: now + this.config.summaryIntervalMs, busy: false, deferred: false })
+      this.state.set(sessionId, { ...this.state.get(sessionId), updatedAt: now,
+        nextAt: now + this.config.summaryIntervalMs, busy: false, deferred: false, error: undefined })
     } catch (error) {
-      this.state.set(sessionId, { ...before, busy: false, deferred: false,
+      this.state.set(sessionId, { ...this.state.get(sessionId), busy: false, deferred: false,
         nextAt: Date.now() + this.config.summaryIntervalMs, error: String(error) })
       if (manual || final) throw error
     }
