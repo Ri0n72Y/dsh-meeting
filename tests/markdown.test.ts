@@ -24,3 +24,16 @@ test('live Session appends atomically projected Markdown, preserving unknown spe
     assert.equal(transcriptMarkdown((await store.read('foo'))!), await store.readDocument('foo', 'transcript.md'))
   } finally { await rm(cwd, { recursive: true, force: true }) }
 })
+
+test('Markdown projection escapes user text and normalizes multi-line content without rewriting state', () => {
+  const snapshot = { sessionId: 'A', phase: 'recording' as const, revision: 0, segments: [
+    { startMs: 0, endMs: 1000, text: '# heading?\r\n> quoted\n- list', speakerId: null },
+  ] }
+  const before = JSON.stringify(snapshot)
+  const text = transcriptMarkdown(snapshot)
+  assert.ok(text.includes('\\# heading?'))
+  assert.ok(text.includes('\\> quoted'))
+  assert.ok(text.includes('\\- list'))
+  assert.ok(text.includes('00:00:00–00:00:01'))
+  assert.equal(JSON.stringify(snapshot), before)
+})

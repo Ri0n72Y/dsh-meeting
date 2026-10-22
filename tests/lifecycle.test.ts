@@ -47,3 +47,20 @@ test('concurrent stopping and disposal settle a capture once', async () => {
   await stopped
   assert.equal(settlements, 1)
 })
+
+test('failed Session settlement still releases its lease and permits reacquisition', async () => {
+  const registry = new SessionCaptureRegistry()
+  let released = 0
+  const old = capture()
+  registry.add('A', {
+    capture: old,
+    async settle() { throw new Error('state write failed') },
+    release() { released++ },
+  })
+  await assert.rejects(registry.stop('A'), /state write failed/)
+  assert.equal(released, 1)
+  assert.equal(registry.has('A'), false)
+  registry.add('A', { capture: capture(), async settle() {}, release() { released++ } })
+  await registry.stop('A')
+  assert.equal(released, 2)
+})

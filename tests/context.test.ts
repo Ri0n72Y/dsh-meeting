@@ -148,3 +148,45 @@ test('reject a symlinked hashed session directory and a symlinked state file', a
     await rm(outside, { recursive: true, force: true })
   }
 })
+
+test('invalid meeting lines and turns fail closed without modifying committed state', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'meeting-invalid-'))
+  try {
+    const store = new MeetingStore(dir)
+    await store.begin('A')
+    const good = { startMs: 1000, endMs: 1500, text: 'accepted', speakerId: null }
+    await store.append('A', good)
+    const original = await store.read('A')
+    const invalid: Array<{startMs: number;endMs: number;text: string;speakerId: string | null;turns?: {startMs:number;endMs:number;speakerId:string|null}[]}> = [
+      { ...good, startMs: -1 },
+      { ...good, startMs: 1500, endMs: 1500 },
+      { ...good, endMs: Number.NaN },
+      { ...good, text: '   ' },
+      { ...good, speakerId: 'Speaker A' },
+      { ...good, turns: [{ startMs: 990, endMs: 1400, speakerId: 'Speaker 1' }] },
+      { ...good, turns: [{ startMs: 1000, endMs: 1600, speakerId: 'Speaker 1' }] },
+      { ...good, turns: [{ startMs: 1400, endMs: 1400, speakerId: 'Speaker 1' }] },
+    ]
+    for (const line of invalid) {
+      await assert.rejects(store.append('A', line), /Invalid meeting line|Invalid speaker turn/)
+      assert.deepEqual(await store.read('A'), original)
+    }
+    await assert.rejects(store.append('A', { ...good, startMs: 500, endMs: 900 }), /Nonmonotonic/)
+    assert.deepEqual(await store.read('A'), original)
+    assert.equal((await store.readDocument('A', 'transcript.md')).includes('accepted'), true)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})
+
+test('stopped meetings reject resume and append without mutating prior transcript', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'meeting-closed-'))
+  try {
+    const store = new MeetingStore(dir)
+    await store.begin('A')
+    await store.append('A', { startMs: 0, endMs: 100, text: 'before stop', speakerId: null })
+    await store.finish('A')
+    const snapshot = await store.read('A')
+    await assert.rejects(store.resume('A'), /No resumable/)
+    await assert.rejects(store.append('A', { startMs: 100, endMs: 200, text: 'after stop', speakerId: null }), /not recording/)
+    assert.deepEqual(await store.read('A'), snapshot)
+  } finally { await rm(dir, { recursive: true, force: true }) }
+})

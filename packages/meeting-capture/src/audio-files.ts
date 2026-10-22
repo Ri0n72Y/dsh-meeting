@@ -1,4 +1,4 @@
-import { mkdir, open, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, link, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
@@ -43,7 +43,9 @@ export async function saveAudioWindow(dir: string, index: number, wav: Uint8Arra
   try {
     await writeFile(temporary, wav, { flag: 'wx', signal })
     signal.throwIfAborted()
-    await rename(temporary, target)
+    // Publish atomically without overwriting an existing committed window.
+    await link(temporary, target)
+    await rm(temporary, { force: true })
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined)
     throw error

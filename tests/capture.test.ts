@@ -193,3 +193,46 @@ test('cancel while queued behind slow ASR flushes a complete waiting PCM window'
   assert.equal(receipt.captured, 2)
   assert.equal(receipt.interrupted, true)
 })
+
+test('PCM windowing is invariant under arbitrary producer chunk boundaries', async () => {
+  const pcm = new Float32Array(SAMPLE_RATE * 11 + 77)
+  pcm.fill(0.3, 0, SAMPLE_RATE * 5)
+  pcm.fill(0, SAMPLE_RATE * 5, SAMPLE_RATE * 10)
+  pcm.fill(-0.2, SAMPLE_RATE * 10)
+  const run = async (pieces: number[]) => {
+    const persisted: Array<{ from: number; to: number; bytes: number[] }> = []
+    const transcribed: Array<[number, number]> = []
+    const capture = new ContinuousCapture({
+      async persist(wav, from, to) { persisted.push({ from, to, bytes: [...wav] }) },
+      async process(_wav, _pcm, from, to) { transcribed.push([from, to]); return null },
+    })
+    let at = 0
+    for (const n of pieces) {
+      if (at >= pcm.length) break
+      await capture.push(pcm.subarray(at, at + n))
+      at += n
+    }
+    if (at < pcm.length) await capture.push(pcm.subarray(at))
+    const receipt = await capture.stop()
+    return { persisted, transcribed, receipt }
+  }
+  const contiguous = await run([SAMPLE_RATE * 10])
+  for (const sizes of [[1, 79_999, 1, 31, 16_000, 700], [317, 55_000, 127, 80_000]]) {
+    assert.deepEqual(await run(sizes), contiguous)
+  }
+  assert.equal(contiguous.receipt.captured, 3)
+  assert.equal(contiguous.receipt.silent, 1)
+})
+
+test('invalid ingestion and options fail at the public capture boundary', async () => {
+  const ports = { async persist() {}, async process() { return null } }
+  for (const opts of [{ offsetSamples: -1 }, { offsetSamples: 1.5 }, { maxQueuedWindows: 0 }]) {
+    assert.throws(() => new ContinuousCapture(ports, opts), /Invalid capture options/)
+  }
+  const c = new ContinuousCapture(ports)
+  await assert.rejects(c.push(new Float32Array(SAMPLE_RATE * 10 + 1)), /Invalid PCM frame/)
+  await assert.rejects(c.push(Float32Array.of(Number.NaN)), /Invalid PCM frame/)
+  await assert.rejects(c.push(Float32Array.of(Number.POSITIVE_INFINITY)), /Invalid PCM frame/)
+  assert.equal((await c.stop()).captured, 0)
+  await assert.rejects(c.push(Float32Array.of(0.1)), /Capture is stopped/)
+})

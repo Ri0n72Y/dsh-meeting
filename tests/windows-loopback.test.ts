@@ -174,3 +174,35 @@ test('repeated tiny silence markers cannot grow the pending queue without bound'
   assert.equal(saved, 1025)
   assert.equal(receipt.samples, 1025)
 })
+
+test('WASAPI adapter output is invariant under byte chunk fragmentation', async () => {
+  const frames = 12_007
+  const data = Buffer.alloc(frames * 4)
+  for (let i = 0; i < frames; i++) {
+    data.writeInt16LE((i % 20) * 900 - 8500, i * 4)
+    data.writeInt16LE((i % 17) * 950 - 7600, i * 4 + 2)
+  }
+  const run = async (cuts: number[]) => {
+    let callback!: (bytes: Buffer | number | null) => void
+    const chunks: Float32Array[] = []
+    const source = new WindowsLoopback(async pcm => { chunks.push(pcm.slice()) }, () => {}, () => ({
+      startSystemAudio(cb) { callback = cb },
+      stop() { queueMicrotask(() => callback(null)) },
+    }))
+    source.start()
+    let offset = 0
+    for (const n of cuts) {
+      if (offset >= data.length) break
+      callback(data.subarray(offset, offset + n))
+      offset += n
+    }
+    if (offset < data.length) callback(data.subarray(offset))
+    const receipt = await source.stop()
+    return { values: chunks.flatMap(x => [...x]), receipt }
+  }
+  const baseline = await run([data.length])
+  for (const split of [[1, 11, 2, 7, 13, 3], [40, 7, 999, 1, 4, 7]]) {
+    assert.deepEqual(await run(split), baseline)
+  }
+  assert.equal(baseline.receipt.samples, Math.ceil(frames / 3))
+})
