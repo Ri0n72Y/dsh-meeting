@@ -9,18 +9,24 @@ The test suite protects independently observable production contracts, not a fix
 | `ContinuousCapture` | Producer chunking does not alter persisted windows; stop preserves accepted tail; failure/cancel do not lose accepted PCM; slow ASR bounds intake | `capture.test.ts` |
 | `MeetingStore` / Workspace | Invalid lines, nonmonotonic times, stopped Session, and path escapes fail without mutating committed state; session data remains isolated | `context.test.ts` |
 | `SessionCaptureRegistry` | Concurrent stop/dispose settles once and releases the lease even when settlement fails | `lifecycle.test.ts` |
-| `markdown.ts` | A transcript is an escaped, time-stamped projection; disk writes expose full prior or new document, not half-written content | `markdown.test.ts` |
+| `markdown.ts` | A transcript is an escaped, time-stamped projection; sequentially persisted Markdown matches the rendered transcript; concurrent replacement/failure atomicity is not currently exercised | `markdown.test.ts` |
 | `SpeakerTracker` / Timeline | Identity is session-scoped, malformed embedding gets no label, and segment times come from observed boundaries | `speaker.test.ts`, `timeline.test.ts` |
-| `WindowsLoopback` JS adapter | Native PCM callback splitting cannot change output; silence advances time; callback drain, backpressure and stop errors preserve accepted samples | `windows-loopback.test.ts` |
+| `WindowsLoopback` JS adapter | Native PCM callback splitting cannot change output; silence advances time; abnormal gaps and native overflow are observable failures; callback drain preserves accepted samples | `windows-loopback.test.ts` |
 | `SummaryJobs` | Concurrent checkpoints coalesce; one final pass follows active work even if a checkpoint failed; Sessions remain independent | `summary-jobs.test.ts` |
 | `summary-batch.ts` | Durable cursors advance by whole segments, and chunked summaries never omit or reintroduce segments | `summary-batch.test.ts` |
+
+## Newly explicit native and timing limits
+
+The N-API TSFN admits at most 256 outstanding audio callbacks plus two reserved control packets (overrun and terminal marker). An overflow raises an observable adapter error and interrupts capture; it must not silently discard accepted audio. The JavaScript callback simulation tests only propagation of this status, **not** contention in the real native queue. Windows CI compiles the real binding, and physical device testing is still required to verify actual dispatch behavior.
+
+A single reported WASAPI frame-position gap exceeding ten minutes is treated as an invalid device timestamp and interrupts capture rather than generating an unbounded silent PCM stream. This is an explicit safeguard, not a claim that all long periods of real silence have been tested. The threshold should be revisited with real hardware recordings.
 
 ## Verification placement
 
 - **Focused checks** on every PR: typecheck, focused contract tests, one build. Test code uses public unit/port APIs, not `Object.create(Service.prototype)` plus private maps or a fabricated Host lifecycle.
 - **DSH Web integration** when its plugin boundaries change: install the actual DSH 0.2.0-rc.2 profile, boot the actual Web Host, confirm the UI contribution, and exercise a real Gateway dispatch/error-transport boundary. The non-existent-Session RPC is a registration smoke check, not evidence of a usable meeting.
 - **Windows native** on WASAPI source/packaging changes: compile and load the real N-API addon. JavaScript callback mocks in routine tests do *not* verify Windows Media Foundation callback threading.
-- **Issue #7 release acceptance** on physical Windows Desktop: Sidebar Start/Stop, actual system playback, official SenseVoice, Workspace WAV/transcript, Session switching, Agent-busy scheduling and LLM-generated final summary. Retain screenshots/logs and actual error paths as release evidence; do not add a large synthetic E2E harness to every PR.
+- **Issue #7 release acceptance** on physical Windows Desktop: Sidebar Start/Stop, actual system playback, official SenseVoice, Workspace WAV/transcript, Session switching, Agent-busy scheduling and LLM-generated final summary. Follow [Windows acceptance](windows-acceptance.md), retain screenshots/logs as release evidence, and do not add a large synthetic E2E harness to every PR.
 
 ## Deliberately uncovered at routine test scope
 

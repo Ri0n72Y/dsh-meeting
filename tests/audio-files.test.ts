@@ -64,7 +64,7 @@ test('checkpoint rejects malformed canonical WAV headers without accepting bad r
       [16, 0],  // fmt chunk size
       [20, 3],  // not PCM encoding
       [22, 2],  // stereo
-      [28, 0],  // byte rate
+      [29, 0],  // byte rate (32000 has zero in its low byte)
       [32, 4],  // block align
       [36, 0],  // missing data chunk
     ]
