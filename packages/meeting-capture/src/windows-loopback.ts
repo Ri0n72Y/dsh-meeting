@@ -64,6 +64,7 @@ export class WindowsLoopback {
         }
         if (this.stopped || this.failedIntake) return
         try {
+          if (bytes === -1) throw new Error('Native WASAPI callback queue overflow')
           if (typeof bytes === 'number') {
             this.queueSilence(bytes)
             return
@@ -98,8 +99,10 @@ export class WindowsLoopback {
 
   /** A native gap is a count of missing 48 kHz frames, not an allocated PCM buffer. */
   private queueSilence(frames: number): void {
-    if (!Number.isSafeInteger(frames) || frames < 1) {
-      throw new Error('Invalid WASAPI silence frame count')
+    // A device position discontinuity larger than ten minutes is not trusted
+    // as silence; fail instead of synthesizing arbitrarily long PCM.
+    if (!Number.isSafeInteger(frames) || frames < 1 || frames > 48_000 * 600) {
+      throw new Error('Invalid or excessive WASAPI silence frame count')
     }
     if (this.carry.length) {
       const needed = (12 - this.carry.length) / 4

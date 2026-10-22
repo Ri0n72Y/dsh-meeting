@@ -138,7 +138,7 @@ test('Session disposal keeps every accepted 1s and 4.9s buffered tail', async ()
   for (const size of [SAMPLE_RATE, SAMPLE_RATE * 4 + Math.floor(SAMPLE_RATE * 0.9)]) {
     const stored: number[] = []
     const capture = new ContinuousCapture({
-      async persist(wav) { stored.push(decodeWav(wav).length) },
+      async persist(wav, _from, _to, signal) { signal.throwIfAborted(); stored.push(decodeWav(wav).length) },
       async process() { throw new Error('Cancelled tail must not start ASR') },
     })
     await capture.push(new Float32Array(size).fill(0.3))
@@ -155,7 +155,7 @@ test('Session disposal keeps every accepted 1s and 4.9s buffered tail', async ()
 test('cancelled genuinely silent PCM is still counted as silence', async () => {
   const stored: number[] = []
   const capture = new ContinuousCapture({
-    async persist(wav) { stored.push(decodeWav(wav).length) },
+    async persist(wav, _from, _to, signal) { signal.throwIfAborted(); stored.push(decodeWav(wav).length) },
     async process() { throw new Error('Cancelled tail must not start ASR') },
   })
   await capture.push(new Float32Array(SAMPLE_RATE))
@@ -173,7 +173,7 @@ test('cancel while queued behind slow ASR flushes a complete waiting PCM window'
   let entered!: () => void
   const enteredPromise = new Promise<void>(resolve => { entered = resolve })
   const capture = new ContinuousCapture({
-    async persist(wav) { stored.push(decodeWav(wav).length) },
+    async persist(wav, _from, _to, signal) { signal.throwIfAborted(); stored.push(decodeWav(wav).length) },
     async process(_wav, _samples, _start, _end, signal) {
       entered()
       await new Promise<void>((_resolve, reject) => {
@@ -235,4 +235,33 @@ test('invalid ingestion and options fail at the public capture boundary', async 
   await assert.rejects(c.push(Float32Array.of(Number.POSITIVE_INFINITY)), /Invalid PCM frame/)
   assert.equal((await c.stop()).captured, 0)
   await assert.rejects(c.push(Float32Array.of(0.1)), /Capture is stopped/)
+})
+
+test('cancellation during in-flight disk persistence does not abort an accepted window', async () => {
+  let entered!: () => void
+  let release!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const saved: number[] = []
+  const capture = new ContinuousCapture({
+    async persist(wav, _start, _end, signal) {
+      signal.throwIfAborted()
+      entered()
+      await gate
+      // A cancelled intake signal would fail here; disk write has independent ownership.
+      signal.throwIfAborted()
+      saved.push(decodeWav(wav).length)
+    },
+    async process() { throw new Error('cancelled capture must not start ASR') },
+  })
+  const pushing = capture.push(voiced(5))
+  await started
+  capture.cancel(new Error('Session disposed during write'))
+  release()
+  await pushing
+  const result = await capture.stop()
+  assert.deepEqual(saved, [SAMPLE_RATE * 5])
+  assert.equal(result.captured, 1)
+  assert.equal(result.processed, 0)
+  assert.equal(result.interrupted, true)
 })

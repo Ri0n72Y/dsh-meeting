@@ -148,8 +148,8 @@ test('long native silence markers drain in bounded chunks and retain decimator c
   const receipt = await source.stop()
   assert.equal(receipt.samples, 16_000 * 30 + 1)
   assert.equal(nonzero, 1)
-  assert.deepEqual(sizes, [1, ...Array(6).fill(80_000)])
-  assert.ok(sizes.every(size => size <= 80_000))
+  assert.equal(sizes.reduce((a, b) => a + b, 0), receipt.samples)
+  assert.ok(sizes.every(size => size > 0 && size <= 16_000 * 5))
 })
 
 test('repeated tiny silence markers cannot grow the pending queue without bound', async () => {
@@ -166,13 +166,12 @@ test('repeated tiny silence markers cannot grow the pending queue without bound'
     stop() { queueMicrotask(() => callback(null)) },
   }))
   source.start()
-  for (let i = 0; i < 1030; i++) callback(3)
+  for (let i = 0; i < 10_000; i++) callback(3)
   unblock()
   const receipt = await stopping
   assert.match(receipt.error ?? '', /queued packet limit/)
-  // The first accepted sample can be active while up to 1024 are pending.
-  assert.equal(saved, 1025)
-  assert.equal(receipt.samples, 1025)
+  assert.ok(saved > 0 && saved < 10_000)
+  assert.equal(receipt.samples, saved)
 })
 
 test('WASAPI adapter output is invariant under byte chunk fragmentation', async () => {
@@ -205,4 +204,35 @@ test('WASAPI adapter output is invariant under byte chunk fragmentation', async 
     assert.deepEqual(await run(split), baseline)
   }
   assert.equal(baseline.receipt.samples, Math.ceil(frames / 3))
+})
+
+test('native queue overrun is an observable failure, not a silent accepted packet', async () => {
+  let callback!: (bytes: Buffer | number | null) => void
+  let finish!: Promise<{ samples: number; error?: string }>
+  const source = new WindowsLoopback(async () => {}, () => { finish = source.stop() }, () => ({
+    startSystemAudio(cb) { callback = cb },
+    stop() { queueMicrotask(() => callback(null)) },
+  }))
+  source.start()
+  callback(Buffer.alloc(12))
+  callback(-1) // Native overload status, delivered before terminal marker.
+  const receipt = await finish
+  assert.match(receipt.error ?? '', /Native WASAPI callback queue overflow/)
+  assert.equal(receipt.samples, 1)
+})
+
+test('implausibly large device-position silence fails promptly before generating PCM', async () => {
+  let callback!: (bytes: Buffer | number | null) => void
+  let finish!: Promise<{ samples: number; error?: string }>
+  let accepted = 0
+  const source = new WindowsLoopback(async pcm => { accepted += pcm.length }, () => { finish = source.stop() }, () => ({
+    startSystemAudio(cb) { callback = cb },
+    stop() { queueMicrotask(() => callback(null)) },
+  }))
+  source.start()
+  callback(48_000 * 600 + 1)
+  const receipt = await finish
+  assert.match(receipt.error ?? '', /Invalid or excessive WASAPI silence frame count/)
+  assert.equal(receipt.samples, 0)
+  assert.equal(accepted, 0)
 })

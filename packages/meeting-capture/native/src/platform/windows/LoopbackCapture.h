@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <atomic>
 
 #include <AudioClient.h>
 #include <mmdeviceapi.h>
@@ -26,6 +27,8 @@ struct AudioDataPacket
    std::unique_ptr<BYTE[]> data;
    UINT32 byteCount = 0;
    UINT64 silenceFrames = 0;
+   bool overflow = false;
+   std::shared_ptr<std::atomic<size_t>> pending;
 };
 
 class CLoopbackCapture : public RuntimeClass<RuntimeClassFlags<ClassicCom>, FtmBase, IActivateAudioInterfaceCompletionHandler>
@@ -147,6 +150,9 @@ private:
    // be invoked safely from the MF work-queue threads.
    Napi::ThreadSafeFunction m_tsfn;
    bool m_tsfnActive = false;
+   // The JS callbacks may outlive this COM capture object.
+   std::shared_ptr<std::atomic<size_t>> m_pendingPackets = std::make_shared<std::atomic<size_t>>(0);
+   bool m_callbackOverflow = false;
    UINT64 m_nextFramePosition = 0;
    bool m_positionValid = false;
 };

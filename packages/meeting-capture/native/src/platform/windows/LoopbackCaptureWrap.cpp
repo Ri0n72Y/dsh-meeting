@@ -51,7 +51,7 @@ bool LoopbackCaptureWrap::PrepareStart(const Napi::CallbackInfo &info, Napi::Fun
        env,
        callback,
        "LoopbackCaptureCallback",
-       0, // unlimited queue
+       258, // 256 pending PCM packets plus reserved overflow and finish markers
        1  // one thread reference; CLoopbackCapture releases it on finish/failure
    );
 

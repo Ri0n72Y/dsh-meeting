@@ -52,3 +52,30 @@ test('existing committed audio window cannot be replaced by the same index', asy
     assert.deepEqual(await audioCheckpoint(root), { nextIndex: 1, offsetSamples: 1600 })
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+test('checkpoint rejects malformed canonical WAV headers without accepting bad resume offsets', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'meeting-invalid-format-'))
+  const file = join(root, '000000.wav')
+  try {
+    const valid = encodeWav(new Float32Array(1600))
+    const changes: Array<[number, number]> = [
+      [4, 0],   // RIFF length
+      [12, 0],  // fmt chunk marker
+      [16, 0],  // fmt chunk size
+      [20, 3],  // not PCM encoding
+      [22, 2],  // stereo
+      [28, 0],  // byte rate
+      [32, 4],  // block align
+      [36, 0],  // missing data chunk
+    ]
+    for (const [offset, value] of changes) {
+      const invalid = valid.slice()
+      invalid[offset] = value
+      await writeFile(file, invalid)
+      await assert.rejects(audioCheckpoint(root), /Corrupt persisted meeting audio/, String(offset))
+      assert.deepEqual(await readFile(file), Buffer.from(invalid))
+    }
+    await writeFile(file, valid)
+    assert.deepEqual(await audioCheckpoint(root), { nextIndex: 1, offsetSamples: 1600 })
+  } finally { await rm(root, { recursive: true, force: true }) }
+})

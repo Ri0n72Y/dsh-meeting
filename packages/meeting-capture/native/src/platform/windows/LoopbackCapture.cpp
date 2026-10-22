@@ -405,24 +405,42 @@ void CLoopbackCapture::EmitAudioData(const BYTE *data, UINT32 byteCount, UINT64 
       return;
    }
 
+   const bool finish = byteCount == 0 && silenceFrames == 0;
+   if (m_callbackOverflow && !finish) return;
+
+   // Audio is admitted only when fewer than 256 callbacks are outstanding.
+   // Two additional TSFN slots are reserved for an overflow error and the
+   // terminal marker, even while JS is delayed.
+   const bool overflow = !finish && m_pendingPackets->load() >= 256;
+   if (overflow)
+   {
+      m_callbackOverflow = true;
+      m_DeviceState = DeviceState::Error;
+   }
+
    auto packet = std::make_unique<AudioDataPacket>();
-   packet->byteCount = byteCount;
-   packet->silenceFrames = silenceFrames;
-   if (byteCount != 0)
+   packet->byteCount = overflow ? 0 : byteCount;
+   packet->silenceFrames = overflow ? 0 : silenceFrames;
+   packet->overflow = overflow;
+   packet->pending = m_pendingPackets;
+   if (!overflow && byteCount != 0)
    {
       packet->data = std::make_unique<BYTE[]>(byteCount);
       memcpy(packet->data.get(), data, byteCount);
    }
 
-   // NonBlockingCall marshals the call onto the JS thread's event loop and
-   // invokes the callback below there. `data` here is the AudioDataPacket*
-   // we hand off; ownership transfers to the JS-thread callback.
+   packet->pending->fetch_add(1);
    napi_status status = m_tsfn.NonBlockingCall(
        packet.get(),
        [](Napi::Env env, Napi::Function jsCallback, AudioDataPacket *pkt)
        {
           std::unique_ptr<AudioDataPacket> owned(pkt);
-          if (owned->silenceFrames != 0)
+          owned->pending->fetch_sub(1);
+          if (owned->overflow)
+          {
+             jsCallback.Call({Napi::Number::New(env, -1)});
+          }
+          else if (owned->silenceFrames != 0)
           {
              jsCallback.Call({Napi::Number::New(env, static_cast<double>(owned->silenceFrames))});
           }
@@ -439,11 +457,15 @@ void CLoopbackCapture::EmitAudioData(const BYTE *data, UINT32 byteCount, UINT64 
 
    if (status == napi_ok)
    {
-      // The TSFN callback above now owns the packet.
       packet.release();
    }
-   // If the queue is full or the TSFN has already been aborted, we simply
-   // drop this chunk of audio rather than blocking the capture thread.
+   else
+   {
+      packet->pending->fetch_sub(1);
+      // A failing TSFN admission is a capture error, not acceptable PCM loss.
+      m_callbackOverflow = true;
+      m_DeviceState = DeviceState::Error;
+   }
 }
 
 //
