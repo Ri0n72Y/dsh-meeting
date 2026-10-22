@@ -53,3 +53,20 @@ test('independent Sessions are not serialized together and completion permits re
   await jobs.run('A', true)
   assert.deepEqual(visited, ['A', 'B', 'A'])
 })
+
+test('a failed checkpoint cannot suppress the queued final summary', async () => {
+  const first = gate()
+  const entered = gate()
+  const calls: string[] = []
+  const jobs = new SummaryJobs(async (_id, final) => {
+    calls.push(final ? 'final' : 'regular')
+    if (!final) { entered.release(); await first.wait; throw new Error('checkpoint failed') }
+  })
+  const regular = jobs.run('A', false)
+  await entered.wait
+  const final = jobs.run('A', true)
+  first.release()
+  await assert.rejects(regular, /checkpoint failed/)
+  await final
+  assert.deepEqual(calls, ['regular', 'final'])
+})

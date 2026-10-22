@@ -7,7 +7,7 @@ export class SummaryJobs {
     const current = this.active.get(sessionId)
     if (current) {
       if (!final || current.final) return current.task
-      const task = current.task.then(() => this.generate(sessionId, true, manual))
+      const task = current.task.catch(() => undefined).then(() => this.generate(sessionId, true, manual))
       const next = { task, final: true }
       this.active.set(sessionId, next)
       try { await task }

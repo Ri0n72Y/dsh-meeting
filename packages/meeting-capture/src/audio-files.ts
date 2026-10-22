@@ -45,7 +45,8 @@ export async function saveAudioWindow(dir: string, index: number, wav: Uint8Arra
     signal.throwIfAborted()
     // Publish atomically without overwriting an existing committed window.
     await link(temporary, target)
-    await rm(temporary, { force: true })
+    // A published window is committed even if temporary-file cleanup fails.
+    await rm(temporary, { force: true }).catch(() => undefined)
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => undefined)
     throw error
