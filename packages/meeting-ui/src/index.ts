@@ -9,6 +9,8 @@ import type {} from '@ri0n72y/dsh-meeting-context'
 import { WindowsLoopback } from '@ri0n72y/dsh-meeting-capture'
 import type {} from '@ri0n72y/dsh-meeting-capture'
 import { contribution, type MeetingView } from './remote.js'
+import { SummaryJobs } from './summary-jobs.js'
+import { summaryCursor, transcriptBatch } from './summary-batch.js'
 
 declare module '@deepseek-ai/cordis' { interface Context { meetingControl: MeetingControl } }
 
@@ -26,7 +28,7 @@ export default class MeetingControl extends TypertRemoteService {
   static inject = ['meetingContext', 'meetingCapture', 'speechToText', 'sessions', 'typert', 'llm', 'agents']
   static Config = z.object({ summaryIntervalMs: z.number().min(1_000).default(900_000) })
   private readonly live = new Map<string, LiveRecording>()
-  private readonly summaries = new Map<string, { task: Promise<void>; final: boolean }>()
+  private readonly summaryJobs = new SummaryJobs((id, final, manual) => this.generate(id, final, manual))
   private starting = false
   private readonly deferredTimers = new Map<string, ReturnType<typeof setInterval>>()
   private readonly state = new Map<string, { updatedAt?: number; nextAt?: number; error?: string; deferred?: boolean; busy?: boolean }>()
@@ -182,7 +184,7 @@ export default class MeetingControl extends TypertRemoteService {
   async stop(sessionId: string): Promise<MeetingView> {
     if (!this.live.has(sessionId)) throw new Error('Meeting is not recording')
     await this.close(sessionId)
-    await this.makeSummary(sessionId, true)
+    await this.summaryJobs.run(sessionId, true)
     if (this.state.get(sessionId)?.deferred) this.deferSummary(sessionId, true)
     return this.snapshot(sessionId)
   }
@@ -196,7 +198,7 @@ export default class MeetingControl extends TypertRemoteService {
   }
 
   async summarize(sessionId: string): Promise<MeetingView> {
-    await this.makeSummary(sessionId, false, true)
+    await this.summaryJobs.run(sessionId, false, true)
     if (!this.live.has(sessionId) && this.state.get(sessionId)?.deferred) {
       this.deferSummary(sessionId, false, true)
     }
@@ -216,7 +218,7 @@ export default class MeetingControl extends TypertRemoteService {
         this.clearDeferredTimer(id)
         return
       }
-      void this.makeSummary(id, final, manual).then(() => {
+      void this.summaryJobs.run(id, final, manual).then(() => {
         if (!this.state.get(id)?.deferred) this.clearDeferredTimer(id)
       }).catch(error => {
         this.state.set(id, { ...this.state.get(id), error: String(error), deferred: false })
@@ -229,28 +231,7 @@ export default class MeetingControl extends TypertRemoteService {
     const state = this.state.get(sessionId)
     if (!this.live.has(sessionId) || !state) return
     if (!state.deferred && Date.now() < (state.nextAt ?? 0)) return
-    await this.makeSummary(sessionId, false)
-  }
-
-  private async makeSummary(sessionId: string, final: boolean, manual = false): Promise<void> {
-    const current = this.summaries.get(sessionId)
-    if (current) {
-      if (!final || current.final) return current.task
-      // One final pass follows the active regular checkpoint, shared by all waiters.
-      const task = current.task.then(() => this.generate(sessionId, true, manual))
-      const next = { task, final: true }
-      this.summaries.set(sessionId, next)
-      try { await task } finally {
-        if (this.summaries.get(sessionId) === next) this.summaries.delete(sessionId)
-      }
-      return
-    }
-    const task = this.generate(sessionId, final, manual)
-    const entry = { task, final }
-    this.summaries.set(sessionId, entry)
-    try { await task } finally {
-      if (this.summaries.get(sessionId) === entry) this.summaries.delete(sessionId)
-    }
+    await this.summaryJobs.run(sessionId, false)
   }
 
   private async generate(sessionId: string, final: boolean, manual: boolean): Promise<void> {
@@ -273,7 +254,7 @@ export default class MeetingControl extends TypertRemoteService {
       return
     }
     const previous = await store.readDocument(sessionId, 'summary.md')
-    const covered = Number(previous.match(/<!-- meeting-covered: (\d+) -->/)?.[1] ?? 0)
+    const covered = summaryCursor(previous)
     if (!manual && !final && covered >= snapshot.segments.length) {
       this.state.set(sessionId, { ...before, nextAt: Date.now() + this.config.summaryIntervalMs, deferred: false })
       return
@@ -294,25 +275,15 @@ export default class MeetingControl extends TypertRemoteService {
     try {
       // Advance the durable cursor only for whole segments actually sent to the LLM.
       do {
-        const lines: string[] = []
-        let length = 0
-        let end = cursor
-        while (end < snapshot.segments.length) {
-          const line = snapshot.segments[end]!
-          const row = '[' + (line.startMs / 1000).toFixed(1) + 's] '
-            + (line.speakerId ?? '未知说话人') + ': ' + line.text
-          if (lines.length && length + row.length + 1 > 25_000) break
-          lines.push(row)
-          length += row.length + 1
-          end++
-        }
+        const batch = transcriptBatch(snapshot.segments, cursor)
+        const end = batch.end
         const last = end === snapshot.segments.length
         const prompt = [
           '你是会议纪要整理助手。仅根据提供的原文更新会议纪要，不要编造事实、决定或行动项。',
           '以中文 Markdown 输出：## 主题、## 关键讨论、## 已明确决定、## 待办与负责人、## 未解决问题。',
           '如缺少信息请明确写“尚未提及”。以下为之前的纪要及新原文，合并而非重复。',
           '既有纪要：\n' + summary.replace(/<!-- meeting-covered: \d+ -->/, '').slice(-14_000),
-          '新增会议原文：\n' + (lines.join('\n') || '（无新增原文）'),
+          '新增会议原文：\n' + (batch.text || '（无新增原文）'),
           ...(final && last ? ['这是停止录音后的最终总结，请完整收束已有内容。'] : []),
         ].join('\n\n')
         const assembler = new BlockAssembler()
