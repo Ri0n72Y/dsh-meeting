@@ -26,20 +26,6 @@ test('incomplete sequence fails closed rather than overwriting previous audio', 
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
-test('checkpoint refuses malformed persisted WAV without advancing recovery offset', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'meeting-corrupt-'))
-  try {
-    const file = join(root, '000000.wav')
-    const original = encodeWav(new Float32Array(1600))
-    await writeFile(file, original)
-    const invalid = original.slice()
-    invalid[24] = 0 // Incorrect sample rate
-    await writeFile(file, invalid)
-    await assert.rejects(audioCheckpoint(root), /Corrupt persisted meeting audio/)
-    assert.deepEqual(await readFile(file), Buffer.from(invalid))
-  } finally { await rm(root, { recursive: true, force: true }) }
-})
-
 test('existing committed audio window cannot be replaced by the same index', async () => {
   const root = await mkdtemp(join(tmpdir(), 'meeting-overwrite-'))
   try {

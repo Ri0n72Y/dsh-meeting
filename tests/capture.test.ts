@@ -134,38 +134,26 @@ test('short quiet utterance within five-second window reaches ASR', async () => 
   assert.equal(processed, 1)
 })
 
-test('Session disposal keeps every accepted 1s and 4.9s buffered tail', async () => {
-  for (const size of [SAMPLE_RATE, SAMPLE_RATE * 4 + Math.floor(SAMPLE_RATE * 0.9)]) {
-    const stored: number[] = []
+test('cancelled capture persists varied buffered tails and counts true silence', async () => {
+  for (const [size, amplitude, silent] of [
+    [SAMPLE_RATE, 0.3, 0],
+    [SAMPLE_RATE * 4 + Math.floor(SAMPLE_RATE * 0.9), 0.3, 0],
+    [SAMPLE_RATE, 0, 1],
+  ]) {
+    const saved: number[] = []
     const capture = new ContinuousCapture({
-      async persist(wav, _from, _to, signal) { signal.throwIfAborted(); stored.push(decodeWav(wav).length) },
+      async persist(wav, _start, _end, signal) { signal.throwIfAborted(); saved.push(decodeWav(wav).length) },
       async process() { throw new Error('Cancelled tail must not start ASR') },
     })
-    await capture.push(new Float32Array(size).fill(0.3))
+    await capture.push(new Float32Array(size).fill(amplitude))
     capture.cancel(new Error('session/disposed'))
     const receipt = await capture.stop()
-    assert.deepEqual(stored, [size])
+    assert.deepEqual(saved, [size])
     assert.equal(receipt.captured, 1)
-    assert.equal(receipt.silent, 0)
+    assert.equal(receipt.silent, silent)
     assert.equal(receipt.processed, 0)
     assert.equal(receipt.interrupted, true)
   }
-})
-
-test('cancelled genuinely silent PCM is still counted as silence', async () => {
-  const stored: number[] = []
-  const capture = new ContinuousCapture({
-    async persist(wav, _from, _to, signal) { signal.throwIfAborted(); stored.push(decodeWav(wav).length) },
-    async process() { throw new Error('Cancelled tail must not start ASR') },
-  })
-  await capture.push(new Float32Array(SAMPLE_RATE))
-  capture.cancel(new Error('session/disposed'))
-  const receipt = await capture.stop()
-  assert.deepEqual(stored, [SAMPLE_RATE])
-  assert.equal(receipt.captured, 1)
-  assert.equal(receipt.silent, 1)
-  assert.equal(receipt.processed, 0)
-  assert.equal(receipt.interrupted, true)
 })
 
 test('cancel while queued behind slow ASR flushes a complete waiting PCM window', async () => {
@@ -200,10 +188,10 @@ test('PCM windowing is invariant under arbitrary producer chunk boundaries', asy
   pcm.fill(0, SAMPLE_RATE * 5, SAMPLE_RATE * 10)
   pcm.fill(-0.2, SAMPLE_RATE * 10)
   const run = async (pieces: number[]) => {
-    const persisted: Array<{ from: number; to: number; bytes: number[] }> = []
+    const persisted: Array<{ from: number; to: number; bytes: Buffer }> = []
     const transcribed: Array<[number, number]> = []
     const capture = new ContinuousCapture({
-      async persist(wav, from, to) { persisted.push({ from, to, bytes: [...wav] }) },
+      async persist(wav, from, to) { persisted.push({ from, to, bytes: Buffer.from(wav) }) },
       async process(_wav, _pcm, from, to) { transcribed.push([from, to]); return null },
     })
     let at = 0

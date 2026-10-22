@@ -3,10 +3,13 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'packages/meeting-capture/native/**'
-      - 'packages/meeting-capture/src/windows-loopback.ts'
-      - 'packages/meeting-capture/package.json'
+      - 'packages/meeting-capture/native/src/**'
+      - 'packages/meeting-capture/native/CMakeLists.txt'
+      - 'packages/meeting-capture/native/package.json'
       - '.github/workflows/windows-addon.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   windows-addon:
     runs-on: windows-latest

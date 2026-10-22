@@ -3,7 +3,11 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'packages/meeting-ui/**'
+      - 'packages/meeting-ui/src/index.ts'
+      - 'packages/meeting-ui/src/remote.ts'
+      - 'packages/meeting-ui/src/client/index.tsx'
+      - 'packages/meeting-ui/package.json'
+      - 'packages/meeting-ui/cordis.patch.yml'
       - 'packages/meeting-context/src/index.ts'
       - 'packages/meeting-context/package.json'
       - 'packages/meeting-context/cordis.patch.yml'
@@ -15,7 +19,12 @@ on:
       - 'packages/meeting-capture/cordis.patch.yml'
       - 'bundles/**'
       - 'pnpm-lock.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
       - '.github/workflows/web-profile-startup.yml'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   web-profile-startup:
     runs-on: ubuntu-latest

@@ -23,10 +23,12 @@ A single reported WASAPI frame-position gap exceeding ten minutes is treated as 
 
 ## Verification placement
 
-- **Focused checks** on every PR: typecheck, focused contract tests, one build. Test code uses public unit/port APIs, not `Object.create(Service.prototype)` plus private maps or a fabricated Host lifecycle.
-- **DSH Web integration** when its plugin boundaries change: install the actual DSH 0.2.0-rc.2 profile, boot the actual Web Host, confirm the UI contribution, and exercise a real Gateway dispatch/error-transport boundary. The non-existent-Session RPC is a registration smoke check, not evidence of a usable meeting.
-- **Windows native** on WASAPI source/packaging changes: compile and load the real N-API addon. JavaScript callback mocks in routine tests do *not* verify Windows Media Foundation callback threading.
+- **Focused checks** on code/config pushes to repository branches (documentation-only pushes excluded; manual dispatch available): typecheck, focused contract tests, one build. Test code uses public unit/port APIs, not `Object.create(Service.prototype)` plus private maps or a fabricated Host lifecycle.
+- **DSH Web integration** when Host/client entry points, remote protocol, plugin manifests or relevant dependencies change: install the actual DSH 0.2.0-rc.2 profile, boot the actual Web Host, confirm the UI contribution, and exercise a real Gateway dispatch/error-transport boundary. The non-existent-Session RPC is a registration smoke check, not evidence of a usable meeting.
+- **Windows native** on C++ addon source/build changes (not JavaScript-only adapter edits): compile and load the real N-API addon. JavaScript callback mocks in routine tests do *not* verify Windows Media Foundation callback threading.
 - **Issue #7 release acceptance** on physical Windows Desktop: Sidebar Start/Stop, actual system playback, official SenseVoice, Workspace WAV/transcript, Session switching, Agent-busy scheduling and LLM-generated final summary. Follow [Windows acceptance](windows-acceptance.md), retain screenshots/logs as release evidence, and do not add a large synthetic E2E harness to every PR.
+
+The three workflows cancel obsolete runs on the same branch; all support manual dispatch when a broader check is warranted. Focused checks use push events rather than cumulative PR diffs to avoid rerunning on documentation-only follow-up commits. Fork PRs are not checked automatically; run the focused workflow on a trusted branch before merging external changes. The main branch was not protected when documentation-only skipping was enabled. Revisit branch protection before requiring a check that documentation-only changes deliberately skip.
 
 ## Deliberately uncovered at routine test scope
 
