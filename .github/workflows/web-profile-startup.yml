@@ -68,7 +68,12 @@ jobs:
           fi
           echo "DSH_WEB_HTTP_PASS"
           # DSH's boot graph is part of the authenticated HTML, not the unauthenticated shell.
-          auth_url=$(grep -Eo 'http://127[.]0[.]0[.]1:[0-9]+/[?]token=[A-Za-z0-9_-]+' "$RUNNER_TEMP/meeting-web.log" | tail -n 1)
+          auth_url=''
+          for i in $(seq 1 30); do
+            auth_url=$(grep -Eo 'http://127[.]0[.]0[.]1:[0-9]+/[?]token=[A-Za-z0-9_-]+' "$RUNNER_TEMP/meeting-web.log" | tail -n 1 || true)
+            if [ -n "$auth_url" ]; then break; fi
+            sleep 1
+          done
           if [ -z "$auth_url" ]; then
             echo "::error::DSH did not print an authenticated Web URL"
             exit 1
