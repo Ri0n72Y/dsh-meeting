@@ -2,23 +2,6 @@ name: DSH Web integration check
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'packages/meeting-ui/**'
-      - 'packages/meeting-context/src/index.ts'
-      - 'packages/meeting-context/package.json'
-      - 'packages/meeting-context/cordis.patch.yml'
-      - 'packages/meeting-speaker/src/index.ts'
-      - 'packages/meeting-speaker/package.json'
-      - 'packages/meeting-speaker/cordis.patch.yml'
-      - 'packages/meeting-capture/src/index.ts'
-      - 'packages/meeting-capture/package.json'
-      - 'packages/meeting-capture/cordis.patch.yml'
-      - 'bundles/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/web-profile-startup.yml'
-  pull_request:
-    branches: [main]
     paths:
       - 'packages/meeting-ui/**'
       - 'packages/meeting-context/src/index.ts'

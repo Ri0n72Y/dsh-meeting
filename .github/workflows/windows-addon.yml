@@ -2,14 +2,6 @@ name: Windows WASAPI native check
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'packages/meeting-capture/native/**'
-      - 'packages/meeting-capture/src/windows-loopback.ts'
-      - 'packages/meeting-capture/package.json'
-      - '.github/workflows/windows-addon.yml'
-  pull_request:
-    branches: [main]
     paths:
       - 'packages/meeting-capture/native/**'
       - 'packages/meeting-capture/src/windows-loopback.ts'
