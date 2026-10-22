@@ -134,38 +134,26 @@ test('short quiet utterance within five-second window reaches ASR', async () => 
   assert.equal(processed, 1)
 })
 
-test('Session disposal keeps every accepted 1s and 4.9s buffered tail', async () => {
-  for (const size of [SAMPLE_RATE, SAMPLE_RATE * 4 + Math.floor(SAMPLE_RATE * 0.9)]) {
-    const stored: number[] = []
+test('cancelled capture persists varied buffered tails and counts true silence', async () => {
+  for (const [size, amplitude, silent] of [
+    [SAMPLE_RATE, 0.3, 0],
+    [SAMPLE_RATE * 4 + Math.floor(SAMPLE_RATE * 0.9), 0.3, 0],
+    [SAMPLE_RATE, 0, 1],
+  ]) {
+    const saved: number[] = []
     const capture = new ContinuousCapture({
-      async persist(wav) { stored.push(decodeWav(wav).length) },
+      async persist(wav, _start, _end, signal) { signal.throwIfAborted(); saved.push(decodeWav(wav).length) },
       async process() { throw new Error('Cancelled tail must not start ASR') },
     })
-    await capture.push(new Float32Array(size).fill(0.3))
+    await capture.push(new Float32Array(size).fill(amplitude))
     capture.cancel(new Error('session/disposed'))
     const receipt = await capture.stop()
-    assert.deepEqual(stored, [size])
+    assert.deepEqual(saved, [size])
     assert.equal(receipt.captured, 1)
-    assert.equal(receipt.silent, 0)
+    assert.equal(receipt.silent, silent)
     assert.equal(receipt.processed, 0)
     assert.equal(receipt.interrupted, true)
   }
-})
-
-test('cancelled genuinely silent PCM is still counted as silence', async () => {
-  const stored: number[] = []
-  const capture = new ContinuousCapture({
-    async persist(wav) { stored.push(decodeWav(wav).length) },
-    async process() { throw new Error('Cancelled tail must not start ASR') },
-  })
-  await capture.push(new Float32Array(SAMPLE_RATE))
-  capture.cancel(new Error('session/disposed'))
-  const receipt = await capture.stop()
-  assert.deepEqual(stored, [SAMPLE_RATE])
-  assert.equal(receipt.captured, 1)
-  assert.equal(receipt.silent, 1)
-  assert.equal(receipt.processed, 0)
-  assert.equal(receipt.interrupted, true)
 })
 
 test('cancel while queued behind slow ASR flushes a complete waiting PCM window', async () => {
@@ -173,7 +161,7 @@ test('cancel while queued behind slow ASR flushes a complete waiting PCM window'
   let entered!: () => void
   const enteredPromise = new Promise<void>(resolve => { entered = resolve })
   const capture = new ContinuousCapture({
-    async persist(wav) { stored.push(decodeWav(wav).length) },
+    async persist(wav, _from, _to, signal) { signal.throwIfAborted(); stored.push(decodeWav(wav).length) },
     async process(_wav, _samples, _start, _end, signal) {
       entered()
       await new Promise<void>((_resolve, reject) => {
@@ -192,4 +180,76 @@ test('cancel while queued behind slow ASR flushes a complete waiting PCM window'
   assert.deepEqual(stored, [SAMPLE_RATE * 5, SAMPLE_RATE * 5])
   assert.equal(receipt.captured, 2)
   assert.equal(receipt.interrupted, true)
+})
+
+test('PCM windowing is invariant under arbitrary producer chunk boundaries', async () => {
+  const pcm = new Float32Array(SAMPLE_RATE * 11 + 77)
+  pcm.fill(0.3, 0, SAMPLE_RATE * 5)
+  pcm.fill(0, SAMPLE_RATE * 5, SAMPLE_RATE * 10)
+  pcm.fill(-0.2, SAMPLE_RATE * 10)
+  const run = async (pieces: number[]) => {
+    const persisted: Array<{ from: number; to: number; bytes: Buffer }> = []
+    const transcribed: Array<[number, number]> = []
+    const capture = new ContinuousCapture({
+      async persist(wav, from, to) { persisted.push({ from, to, bytes: Buffer.from(wav) }) },
+      async process(_wav, _pcm, from, to) { transcribed.push([from, to]); return null },
+    })
+    let at = 0
+    for (const n of pieces) {
+      if (at >= pcm.length) break
+      await capture.push(pcm.subarray(at, at + n))
+      at += n
+    }
+    if (at < pcm.length) await capture.push(pcm.subarray(at))
+    const receipt = await capture.stop()
+    return { persisted, transcribed, receipt }
+  }
+  const contiguous = await run([SAMPLE_RATE * 10])
+  for (const sizes of [[1, 79_999, 1, 31, 16_000, 700], [317, 55_000, 127, 80_000]]) {
+    assert.deepEqual(await run(sizes), contiguous)
+  }
+  assert.equal(contiguous.receipt.captured, 3)
+  assert.equal(contiguous.receipt.silent, 1)
+})
+
+test('invalid ingestion and options fail at the public capture boundary', async () => {
+  const ports = { async persist() {}, async process() { return null } }
+  for (const opts of [{ offsetSamples: -1 }, { offsetSamples: 1.5 }, { maxQueuedWindows: 0 }]) {
+    assert.throws(() => new ContinuousCapture(ports, opts), /Invalid capture options/)
+  }
+  const c = new ContinuousCapture(ports)
+  await assert.rejects(c.push(new Float32Array(SAMPLE_RATE * 10 + 1)), /Invalid PCM frame/)
+  await assert.rejects(c.push(Float32Array.of(Number.NaN)), /Invalid PCM frame/)
+  await assert.rejects(c.push(Float32Array.of(Number.POSITIVE_INFINITY)), /Invalid PCM frame/)
+  assert.equal((await c.stop()).captured, 0)
+  await assert.rejects(c.push(Float32Array.of(0.1)), /Capture is stopped/)
+})
+
+test('cancellation during in-flight disk persistence does not abort an accepted window', async () => {
+  let entered!: () => void
+  let release!: () => void
+  const started = new Promise<void>(resolve => { entered = resolve })
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const saved: number[] = []
+  const capture = new ContinuousCapture({
+    async persist(wav, _start, _end, signal) {
+      signal.throwIfAborted()
+      entered()
+      await gate
+      // A cancelled intake signal would fail here; disk write has independent ownership.
+      signal.throwIfAborted()
+      saved.push(decodeWav(wav).length)
+    },
+    async process() { throw new Error('cancelled capture must not start ASR') },
+  })
+  const pushing = capture.push(voiced(5))
+  await started
+  capture.cancel(new Error('Session disposed during write'))
+  release()
+  await pushing
+  const result = await capture.stop()
+  assert.deepEqual(saved, [SAMPLE_RATE * 5])
+  assert.equal(result.captured, 1)
+  assert.equal(result.processed, 0)
+  assert.equal(result.interrupted, true)
 })

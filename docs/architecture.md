@@ -4,7 +4,7 @@ Based on the proven multi-plugin layout in [dsh-mindppt](https://github.com/Ri0n
 
 ## One plugin = one compilation scope
 
-Each Cordis service package owns `src` and `tsconfig.json`, extends a shared `tsconfig.base.json`, and has its own `typecheck` script. The repository's top-level typecheck runs every plugin plus a separate scope for tests and demos. No source file is manually excluded, and `skipLibCheck` is **not** used to conceal conflicts in our source.
+Each Cordis service package owns `src` and `tsconfig.json`, extends a shared `tsconfig.base.json`, and has its own `typecheck` script. The repository's top-level typecheck runs every plugin plus the tests. No source file is manually excluded, and `skipLibCheck` is **not** used to conceal conflicts in our source.
 
 ## Keep one Context augmentation identity
 
@@ -12,9 +12,9 @@ Cordis `declare module '@deepseek-ai/cordis'` extends the same Context across in
 
 Do not solve TS2717 by deleting Context augmentations, widening services to `any`, or suppressing compiler diagnostics.
 
-## CI validates both boundaries
+## Verification boundaries
 
-CI typechecks **before** build (no generated `dist`), tests pure capability boundaries, builds each package, then typechecks **after** build (generated `dist` present) and runs the independent demo. This catches new plugins without development exports and regressions where stale declaration outputs shadow source.
+Automated CI performs one source typecheck, focused contract tests and one build. Native C++ changes require a clean local Windows build and N-API load check; DSH profile/registration is verified during manual deployment. Desktop playback, SenseVoice and LLM remain release acceptance, not CI claims; see [testing contracts](testing-contracts.md) and [Windows acceptance](windows-acceptance.md).
 
 ## Package dependency versions
 
@@ -27,4 +27,4 @@ Keep capability-to-capability boundaries in `peerDependencies: workspace:*`, use
 
 The previous root-wide `tsc --noEmit` compiled *every* `packages/**/src` file while separately loading compiled `dist` declarations for package specifiers. Since Service classes carry different module identities, their Cordis Context merge failed with TS2717 despite printing apparently identical class names. The above contract addresses the identity mismatch rather than masking it.
 
-The three services and their domain behavior remain unchanged by this correction.
+MeetingControl and the Sidebar are separate UI capabilities; test ownership follows each actual component boundary rather than duplicating multi-plugin flow simulations.

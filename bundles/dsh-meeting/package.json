@@ -15,6 +15,7 @@
   "dependencies": {
     "@ri0n72y/dsh-meeting-context": "workspace:*",
     "@ri0n72y/dsh-meeting-capture": "workspace:*",
-    "@ri0n72y/dsh-meeting-speaker": "workspace:*"
+    "@ri0n72y/dsh-meeting-speaker": "workspace:*",
+    "@ri0n72y/dsh-meeting-ui": "workspace:*"
   }
 }

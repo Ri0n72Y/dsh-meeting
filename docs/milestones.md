@@ -1,35 +1,21 @@
-# First three independently observable capabilities
+# Meeting P0 milestones and acceptance
 
-Baseline: DSH `dsh-v0.2.0-rc.2`. This iteration **assumes**, rather than validates, official Speech and sherpa-onnx Windows support.
+Target: DSH `0.2.0-rc.2` with the official Voice Input / SenseVoice provider. Full product scope and mandatory real-Windows acceptance are defined in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7).
 
-## C1 — Meeting Context
-- One meeting per real DSH Session id; no parallel meeting identifier.
-- `begin`, `resume`, `interrupt`, `append`, `finish`, `read` on a persistent, Session-keyed store under `<Session Workspace>/.dsh-meeting/<sha256(sessionId)>/`.
-- Tool `meeting_status` is visible in the Agent conversation.
-- `state.json` is temporary internal storage; Markdown format is deferred.
+## Implemented source capabilities
 
-## C2 — Meeting Capture
-- Host service `start(sessionId)` → `await push(sessionId, Float32Array @ 16 kHz)` → `stop()` persists a continuous stream as timed PCM windows with a bounded asynchronous ASR queue.
-- Persist **all** accepted PCM windows including silent and sub-350ms final tails; silence gate prevents unnecessary ASR calls. Slow recognition backpressures `push`.
-- The exact official `speechToText.resolve({ providerId: 'sensevoice-local' })` and `transcribe` route generates text.
-- ASR failure keeps audio and allows later windows to proceed; disk errors and caller cancellation mark the meeting `interrupted` for explicit resumption.
-- Browser `BrowserMicrophone` provides independently usable native capture with resampling; `examples/microphone.html` shows elapsed captured samples.
-- Agent tool `meeting_capture_file` exercises the complete Host processing path against an existing WAV.
-- **Not done:** DSH browser→Host PCM Remote and interactive Sidebar controls.
+- **Context:** One meeting per DSH Session; durable `state.json`, `transcript.md`, `summary.md` and WAV windows under the Session Workspace; safe Session IDs, restart and interruption recovery.
+- **Capture:** `WindowsLoopback` adapts system-playback WASAPI data to 16 kHz mono PCM and uses `ContinuousCapture` for durable windows, bounded ASR, silence handling and cancellation. `meeting_capture_file` remains an independent Agent-facing file transcription tool.
+- **Speaker:** Optional local diarization, Session-scoped anonymous Speaker labels, no fabricated word alignment if several speakers overlap.
+- **Meeting UI:** Host MeetingControl, official Typert Gateway contribution and DSH Sidebar tab for Start/Stop, read-only transcript/summary, manual/periodic and final summary.
 
-## C3 — Meeting Speaker
-- Upstream `SpeakerEmbeddingExtractor`, `SpeakerEmbeddingManager`, and optional `OfflineSpeakerDiarization` APIs, without Python.
-- Session-local numbering; no persistent biometric identity.
-- Capture returns `turns` for mixed windows, but does **not** falsely align ASR words to speaker turns.
-- Without the models, labels are null rather than fabricated.
+## Verification status
 
-## Checks and honest limitations
-- `tests/context.test.ts`: isolation, persistence, serialized writes, crash/restart and interrupted recovery.
-- `tests/capture.test.ts`: continuity, sub-350ms tail, storage failure, backpressure under slow ASR and cancellation.
-- `tests/speaker.test.ts` and `tests/timeline.test.ts`: local IDs, recovery-safe numbering, speaker turn boundaries.\n- `tests/audio-files.test.ts`: recovered sample offsets and contiguous durable audio windows.\n- `tests/browser.test.ts`: concurrent microphone permission and stop race.
-- `pnpm proof`: deterministic simulated audio, mocked model, visibly formatted terminal output, **not** proof of ASR/diarization quality.
-- Live Windows microphone/system-loopback, DER/WER, DSH end-to-end and package installation are **unverified**. They are later acceptance work, intentionally not claimed here.
+Focused CI tests component contracts, typechecks and builds the TypeScript packages. Native Windows compilation/loading and DSH profile registration now require manual deployment checks, rather than dedicated cloud CI jobs. Details and uncovered contracts: [testing-contracts.md](testing-contracts.md); release checks: [windows-acceptance.md](windows-acceptance.md).
 
-## Remaining non-blocking acceptance gaps
-- Recovery retains all committed PCM and resumes from its actual sample offset. Previously persisted windows that crashed before ASR settlement may require a later replay pass; this iteration does not claim complete transcript backfill.
-- Host microphone capture can only be continuous when the future browser→Host transport honors the awaitable `push` backpressure contract. Native Windows mic/system-loopback remains unverified by design.
+**Not established by focused CI:** native addon compatibility, DSH plugin registration, physical Windows system-audio capture; actual official SenseVoice transcription quality and readiness; real DSH Sidebar interaction, streamed view updates, Session switching and document scroll behavior; actual LLM summary output, busy-Agent deferral and final summary. These require the release/acceptance evidence in Issue #7. A successful simulated PCM test, mocked callback or Gateway error-roundtrip is not a substitute.
+
+## Known functional limits
+
+- Existing durable WAV windows are not automatically replayed into missing transcript segments after a crash that occurred between persistence and ASR settlement.
+- The separately exported `BrowserMicrophone` and example page are not the DSH meeting audio source; P0 uses Windows system playback.

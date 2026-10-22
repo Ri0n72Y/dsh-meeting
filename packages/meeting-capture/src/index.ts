@@ -16,6 +16,7 @@ export { ContinuousCapture } from './continuous.js'
 export type { CapturedLine, CaptureReceipt, CapturePorts, SpeakerTurn, CaptureOptions } from './continuous.js'
 export { decodeWav, encodeWav, SAMPLE_RATE } from './wav.js'
 export { audioCheckpoint, saveAudioWindow } from './audio-files.js'
+export { WindowsLoopback, downmix48k } from './windows-loopback.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { meetingCapture: MeetingCapture }
@@ -24,15 +25,17 @@ export default class MeetingCapture extends Service {
   static inject = ['meetingContext', 'speechToText', 'tools', 'sessions']
   private readonly active = new SessionCaptureRegistry()
   private readonly starting = new Set<string>()
+  private readonly sourceClosers = new Map<string, () => Promise<void>>()
 
   constructor(ctx: Context) {
     super(ctx, 'meetingCapture')
     ctx.on('session/disposed', (session) => {
-      void this.active.cancel(session.header.id, new Error('DSH Session disposed'))
+      void this.disposeSession(session.header.id)
         .catch(error => ctx.logger('meeting-capture').warn('Session cleanup: ' + String(error)))
     })
-    ctx.effect(() => () => this.active.cancelAll(new Error('Meeting capture plugin unloaded')),
-      'meeting-capture: drain on unload')
+    ctx.effect(() => async () => {
+      await Promise.allSettled(this.active.keys().map(id => this.disposeSession(id)))
+    }, 'meeting-capture: drain on unload')
     ctx.effect(() => ctx.tools.register(defineTool({
       name: 'meeting_capture_file',
       description: 'Transcribe an existing canonical 16 kHz mono PCM16 WAV within the current DSH Session workspace using official local SenseVoice.',
@@ -68,6 +71,22 @@ export default class MeetingCapture extends Service {
         }
       },
     })), 'meeting-capture: file proof tool')
+  }
+
+  // If a live system-audio source owns this capture, close that source first.
+  // File-only captures have no source closer and keep their existing cleanup.
+  async disposeSession(id: string): Promise<void> {
+    const closeSource = this.sourceClosers.get(id)
+    if (closeSource) await closeSource()
+    else await this.active.cancel(id, new Error('DSH Session disposed'))
+  }
+
+  registerSourceCloser(id: string, closer: () => Promise<void>): () => void {
+    if (!this.active.has(id) || this.sourceClosers.has(id)) {
+      throw new Error('Meeting source closer requires one active capture')
+    }
+    this.sourceClosers.set(id, closer)
+    return () => { if (this.sourceClosers.get(id) === closer) this.sourceClosers.delete(id) }
   }
 
   async start(sessionId: string, options: Pick<CaptureOptions, 'signal'> = {}): Promise<ContinuousCapture> {

@@ -1,0 +1,13 @@
+{
+  "name": "@ri0n72y/dsh-meeting-wasapi-source",
+  "private": true,
+  "version": "3.0.2-meeting.1",
+  "description": "MIT-licensed loopback-capture 3.0.2 Windows source with silence and end-of-stream fixes",
+  "scripts": {
+    "build": "cmake-js compile"
+  },
+  "devDependencies": {
+    "cmake-js": "8.0.0",
+    "node-addon-api": "8.9.0"
+  }
+}

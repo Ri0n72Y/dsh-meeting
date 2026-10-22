@@ -8,3 +8,7 @@
         segmentationModelPath: ''
     - id: meeting-capture
       name: '@ri0n72y/dsh-meeting-capture'
+    - id: meeting-control
+      name: '@ri0n72y/dsh-meeting-ui'
+      config:
+        summaryIntervalMs: 900000
