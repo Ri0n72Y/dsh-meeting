@@ -51,13 +51,15 @@ Workspace confinement is checked against canonical filesystem paths. Existing sy
 ## Meeting Sidebar P0
 The new Meeting tab is contributed through DSH's official right Sidebar Slot. Its Start/Stop controls capture Windows x64 **system playback** using a pinned, MIT-licensed native WASAPI source adaptation (based on `loopback-capture@3.0.2`), not a browser microphone.
 
-Before installing MeetingCapture on a Windows x64 source checkout, build its Windows addon with Node 24, MSVC Build Tools and CMake:
+Before installing MeetingCapture on a Windows x64 source checkout (and whenever its native source or build configuration changes), build its addon cleanly with Node 24, MSVC Build Tools and CMake:
 
 ```powershell
 cd packages/meeting-capture/native
-npm install --no-package-lock
+if (Test-Path .\build) { Remove-Item .\build -Recurse -Force }
+npm install --no-package-lock --no-audit --no-fund --ignore-scripts
 npm run build
+node -e "const addon = require('./build/Release/loopback_capture_addon.node'); const source = new addon.LoopbackCapture(); if (typeof source.startSystemAudio !== 'function' || typeof source.stop !== 'function') process.exit(1)"
 cd ../../..
 ```
 
-The local addon (inside `native/build/Release/`) preserves WASAPI silent frames and emits an ordered end-of-callback sentinel on Stop. The Host does not use the original upstream prebuilt binary, because that binary drops silence and has no reliable callback flush acknowledgment. CI compiles and loads the patched native source; physical audio-device acceptance still requires a Windows desktop. Markdown transcript and summary remain inside the Session Workspace. Auto summary defaults to 15 minutes and uses the live Session's own LLM route only when its Agent is idle. Native Windows verification remains required.
+The local addon (inside `native/build/Release/`) preserves WASAPI silent frames and emits an ordered end-of-callback sentinel on Stop. The Host does not use the original upstream prebuilt binary, because that binary drops silence and has no reliable callback flush acknowledgment. The clean build and load check are **manual**, not cloud CI. Verify actual audio capture, DSH registration and lifecycle in the target Windows Desktop environment; record the result against [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7). Markdown transcript and summary remain inside the Session Workspace. Auto summary defaults to 15 minutes and uses the live Session's own LLM route only when its Agent is idle.

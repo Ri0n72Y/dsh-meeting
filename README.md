@@ -11,6 +11,6 @@ The combined bundle is `bundles/dsh-meeting/cordis.patch.yml`. Install the offic
 
 ## Verification
 
-Daily CI runs focused contract tests, a typecheck and a build. DSH Web integration and Windows native compilation run as separate path-scoped workflows. See [test ownership and acceptance boundaries](docs/testing-contracts.md) and [installation](docs/installation.md).
+Automated CI is limited to focused contract tests, one typecheck and one build. Native changes require a clean local Windows build and load check; DSH installation and end-to-end behavior are verified manually. See [verification boundaries](docs/testing-contracts.md), [installation](docs/installation.md) and [Windows acceptance](docs/windows-acceptance.md).
 
-These checks do **not** establish a working Windows desktop audio source or real SenseVoice/LLM output. Issue [#7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) requires physical Windows DSH acceptance from Sidebar Start through final summary before the feature is considered complete.
+Focused CI does **not** establish native Windows compatibility, a working desktop audio source or real SenseVoice/LLM output. Issue [#7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) requires physical Windows DSH acceptance from Sidebar Start through final summary before the feature is considered complete.

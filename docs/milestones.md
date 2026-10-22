@@ -11,9 +11,9 @@ Target: DSH `0.2.0-rc.2` with the official Voice Input / SenseVoice provider. Fu
 
 ## Verification status
 
-Focused tests exercise component contracts and their failure boundaries; native CI compiles and loads the Windows addon; Web CI installs a real DSH Profile and checks the client manifest and Gateway dispatch. Details and deliberately uncovered contracts: [testing-contracts.md](testing-contracts.md).
+Focused CI tests component contracts, typechecks and builds the TypeScript packages. Native Windows compilation/loading and DSH profile registration now require manual deployment checks, rather than dedicated cloud CI jobs. Details and uncovered contracts: [testing-contracts.md](testing-contracts.md); release checks: [windows-acceptance.md](windows-acceptance.md).
 
-**Not yet established by CI:** physical Windows system-audio capture; actual official SenseVoice transcription quality and readiness; real DSH Sidebar interaction, streamed view updates, Session switching and document scroll behavior; actual LLM summary output, busy-Agent deferral and final summary. These require the release/acceptance evidence in Issue #7. A successful simulated PCM test, mocked callback or Gateway error-roundtrip is not a substitute.
+**Not established by focused CI:** native addon compatibility, DSH plugin registration, physical Windows system-audio capture; actual official SenseVoice transcription quality and readiness; real DSH Sidebar interaction, streamed view updates, Session switching and document scroll behavior; actual LLM summary output, busy-Agent deferral and final summary. These require the release/acceptance evidence in Issue #7. A successful simulated PCM test, mocked callback or Gateway error-roundtrip is not a substitute.
 
 ## Known functional limits
 

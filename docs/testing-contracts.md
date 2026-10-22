@@ -17,18 +17,18 @@ The test suite protects independently observable production contracts, not a fix
 
 ## Newly explicit native and timing limits
 
-The N-API TSFN admits at most 256 outstanding audio callbacks plus two reserved control packets (overrun and terminal marker). An overflow raises an observable adapter error and interrupts capture; it must not silently discard accepted audio. The JavaScript callback simulation tests only propagation of this status, **not** contention in the real native queue. Windows CI compiles the real binding, and physical device testing is still required to verify actual dispatch behavior.
+The N-API TSFN admits at most 256 outstanding audio callbacks plus two reserved control packets (overrun and terminal marker). An overflow raises an observable adapter error and interrupts capture; it must not silently discard accepted audio. The JavaScript callback simulation tests only propagation of this status, **not** contention in the real native queue. A clean native build and actual callback behavior must be verified on Windows during manual acceptance.
 
 A single reported WASAPI frame-position gap exceeding ten minutes is treated as an invalid device timestamp and interrupts capture rather than generating an unbounded silent PCM stream. This is an explicit safeguard, not a claim that all long periods of real silence have been tested. The threshold should be revisited with real hardware recordings.
 
 ## Verification placement
 
-- **Focused checks** on code/config pushes to repository branches (documentation-only pushes excluded; manual dispatch available): typecheck, focused contract tests, one build. Test code uses public unit/port APIs, not `Object.create(Service.prototype)` plus private maps or a fabricated Host lifecycle.
-- **DSH Web integration** when Host/client entry points, remote protocol, plugin manifests or relevant dependencies change: install the actual DSH 0.2.0-rc.2 profile, boot the actual Web Host, confirm the UI contribution, and exercise a real Gateway dispatch/error-transport boundary. The non-existent-Session RPC is a registration smoke check, not evidence of a usable meeting.
-- **Windows native** on C++ addon source/build changes (not JavaScript-only adapter edits): compile and load the real N-API addon. JavaScript callback mocks in routine tests do *not* verify Windows Media Foundation callback threading.
-- **Issue #7 release acceptance** on physical Windows Desktop: Sidebar Start/Stop, actual system playback, official SenseVoice, Workspace WAV/transcript, Session switching, Agent-busy scheduling and LLM-generated final summary. Follow [Windows acceptance](windows-acceptance.md), retain screenshots/logs as release evidence, and do not add a large synthetic E2E harness to every PR.
+- **Focused CI** on non-documentation pushes to repository branches: one typecheck, focused contract tests, one build. Tests use public unit/port APIs rather than fabricated Host internals.
+- **Local Windows build check** whenever the native addon source, build configuration or Node ABI target changes: clean the previous native output, compile from source using Node 24, and load the new N-API binary. A cached `.node` file does not count.
+- **Manual DSH deployment** when registration, manifests or Host/client interfaces change: install into the real DSH environment and verify the plugin loads and its entry points register. Web-only registration is not evidence of a working Desktop meeting.
+- **Issue #7 release acceptance** in real Windows DSH Desktop: Sidebar Start/Stop, playback capture, SenseVoice, Session-scoped WAV/transcript, Session switching, stream updates and LLM final summary. Use [Windows acceptance](windows-acceptance.md) and retain evidence before release.
 
-The three workflows cancel obsolete runs on the same branch; all support manual dispatch when a broader check is warranted. Focused checks use push events rather than cumulative PR diffs to avoid rerunning on documentation-only follow-up commits. Fork PRs are not checked automatically; run the focused workflow on a trusted branch before merging external changes. The main branch was not protected when documentation-only skipping was enabled. Revisit branch protection before requiring a check that documentation-only changes deliberately skip.
+The two cloud workflows for Windows compilation and DSH Web startup were removed; no separate manual-only GitHub workflows are retained. Focused CI still has manual dispatch and cancels obsolete same-branch runs. Fork PRs are not checked automatically; verify their changes in a trusted branch before merging. CI success is not native or Desktop acceptance.
 
 ## Deliberately uncovered at routine test scope
 

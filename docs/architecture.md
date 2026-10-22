@@ -12,9 +12,9 @@ Cordis `declare module '@deepseek-ai/cordis'` extends the same Context across in
 
 Do not solve TS2717 by deleting Context augmentations, widening services to `any`, or suppressing compiler diagnostics.
 
-## CI validates both boundaries
+## Verification boundaries
 
-Routine CI performs one source typecheck, focused contract tests and one build. Separate path-scoped workflows exercise real DSH Profile/Web/Gateway registration and Windows addon compilation/loading. The Windows native job does not repeat Linux's simulated adapter tests. Physical desktop playback, SenseVoice and LLM remain release acceptance, not CI claims; see [testing contracts](testing-contracts.md).
+Automated CI performs one source typecheck, focused contract tests and one build. Native C++ changes require a clean local Windows build and N-API load check; DSH profile/registration is verified during manual deployment. Desktop playback, SenseVoice and LLM remain release acceptance, not CI claims; see [testing contracts](testing-contracts.md) and [Windows acceptance](windows-acceptance.md).
 
 ## Package dependency versions
 
