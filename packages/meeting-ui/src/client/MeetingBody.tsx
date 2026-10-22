@@ -76,8 +76,8 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
       if (currentSession.current === sessionId) setAction(null)
     }
   }
-  const elapsed = view?.startedAt && data.recording
-    ? Math.max(0, Math.floor((now - data.startedAt) / 1000)) : 0
+  const elapsed = view?.startedAt && view.recording
+    ? Math.max(0, Math.floor((now - view.startedAt) / 1000)) : 0
   const elapsedText = [Math.floor(elapsed / 3600), Math.floor(elapsed / 60) % 60, elapsed % 60]
     .map(n => String(n).padStart(2, '0')).join(':')
   return <div className={css.root} data-meeting-session={sessionId}>
@@ -97,9 +97,9 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
       <div className={css.detail}>系统播放音频 · Windows WASAPI Loopback</div>
       <div className={css.detail}>SenseVoice · {view?.recognizerPhase === 'ready' ? '已就绪' :
         view?.recognizerPhase === 'missing' ? '未安装' : view?.recognizerPhase ?? '检测中'} · 已识别 {view?.transcript ?? 0} 段</div>
-      {data && data.recognizerPhase !== 'ready' && data.recognizerPhase !== 'missing' && (
+      {view && view.recognizerPhase !== 'ready' && view.recognizerPhase !== 'missing' && (
         <Button variant="outline" size="sm"
-          disabled={action !== null || ['downloading','checking','loading','waking','cancelling'].includes(data.recognizerPhase)}
+          disabled={action !== null || ['downloading','checking','loading','waking','cancelling'].includes(view.recognizerPhase)}
           onClick={() => void run('prepare')}>准备 SenseVoice</Button>
       )}
       {view?.recognizerPhase === 'missing' && <div className={css.detail}>请先安装 DSH 官方语音输入插件。</div>}
@@ -109,7 +109,7 @@ export function MeetingBody({ sessionId, useTabInfo, meetingRemote }: Props): Re
       <SegmentedControl id="meeting-document" value={selected} label="会议文档"
         options={tabs} onChange={setSelected} />
       {selected === 'summary' &&
-        <Button variant="ghost" size="sm" disabled={action !== null || !view || data.transcript === 0}
+        <Button variant="ghost" size="sm" disabled={action !== null || !view || view.transcript === 0}
           onClick={() => void run('summarize')}>立即总结</Button>}
     </div>
     {selected === 'summary' &&
