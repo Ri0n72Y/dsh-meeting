@@ -1,6 +1,6 @@
 # Windows Desktop release acceptance (Issue #7)
 
-This is a **manual release gate**, not part of each PR's focused CI. Run against the built native addon in actual DSH Desktop 0.2.0-rc.2 on Windows x64 with the official Voice Input Bundle and prepared `sensevoice-local` provider. Do not treat the Web-host error RPC, N-API module-load smoke, or mock PCM callbacks as substitutes.
+This is a **manual release gate**, not part of each PR's focused CI. Run against DSH Desktop `0.2.1-rc.3` (the minimum supported release; newer releases need new evidence) and the built native addon in actual DSH Desktop 0.2.1-rc.3 on Windows x64 with the official Voice Input Bundle and prepared `sensevoice-local` provider. Do not treat the Web-host error RPC, N-API module-load smoke, or mock PCM callbacks as substitutes.
 
 When the native C++ source, CMake configuration or Node ABI target changes, first perform a **clean local Windows build and N-API load check** using the commands in [installation](installation.md). Delete the old `native/build` output before compiling and ensure the module loaded was newly built. Do not treat an existing binary as verification. DSH plugin registration is also checked in the installed local environment, not by a cloud Web workflow.
 

@@ -9,7 +9,7 @@
     "cordis.patch.yml"
   ],
   "scripts": {
-    "build": "tsdown src/index.ts --format esm --dts --out-dir dist",
+    "build": "tsdown src/index.ts --format esm --dts --no-fixed-extension --out-dir dist",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
@@ -22,7 +22,7 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "3.18.4"
+    "@deepseek-ai/schemastery": "3.18.5"
   },
   "exports": {
     ".": {
@@ -36,5 +36,8 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.3"
   }
 }

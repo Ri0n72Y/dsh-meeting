@@ -1,6 +1,6 @@
 # Meeting P0 milestones and acceptance
 
-Target: DSH `0.2.0-rc.2` with the official Voice Input / SenseVoice provider. Full product scope and mandatory real-Windows acceptance are defined in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7).
+Target: DSH `0.2.1-rc.3` with the official Voice Input / SenseVoice provider. Full product scope and mandatory real-Windows acceptance are defined in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7).
 
 ## Implemented source capabilities
 

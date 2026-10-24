@@ -26,7 +26,7 @@ interface LiveRecording {
 
 export default class MeetingControl extends TypertRemoteService {
   static inject = ['meetingContext', 'meetingCapture', 'speechToText', 'sessions', 'typert', 'llm', 'agents']
-  static Config = z.object({ summaryIntervalMs: z.number().min(1_000).default(900_000) })
+  static Config: z<Config> = z.object({ summaryIntervalMs: z.number().min(1_000).default(900_000) })
   private readonly live = new Map<string, LiveRecording>()
   private readonly summaryJobs = new SummaryJobs((id, final, manual) => this.generate(id, final, manual))
   private starting = false
@@ -35,7 +35,7 @@ export default class MeetingControl extends TypertRemoteService {
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'meetingControl', { namespace: 'meeting' })
-    // DSH 0.2.0-rc.2 separates consumer descriptors from Host local invocations.
+    // DSH 0.2.1-rc.3 separates consumer descriptors from Host local invocations.
     // The published Typert Context contract omits register(), but its runtime
     // service exposes the supported generated-contribution registration method.
     const hostTypert = ctx.typert as typeof ctx.typert & {
