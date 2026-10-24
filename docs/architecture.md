@@ -19,9 +19,9 @@ Automated CI performs one source typecheck, focused contract tests and one build
 ## Package dependency versions
 
 This is a third-party monorepo, not DSH's own source workspace. Use independently published versions:
-- `@deepseek-ai/cordis@4.0.4` (not `0.2.0-rc.2`)
+- `@deepseek-ai/cordis@4.0.4` (not `0.2.1-rc.3`)
 - `@deepseek-ai/schemastery@3.18.4`
-- DSH packages such as `@deepseek-ai/dsh-tools@0.2.0-rc.2`.
+- DSH packages such as `@deepseek-ai/dsh-tools@0.2.1-rc.3`.
 
 Keep capability-to-capability boundaries in `peerDependencies: workspace:*`, use type-only imports for cross-plugin Context augmentations, and do not import another plugin's private implementation path from production code.
 

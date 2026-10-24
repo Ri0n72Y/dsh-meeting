@@ -1,23 +1,23 @@
 # Install and enable Meeting capabilities independently
 
-Target: DeepSeek Harness `0.2.0-rc.2`. Each capability declares its own `dsh.bundle.patch` and can be added to a DSH profile separately. The combined `bundles/dsh-meeting` package remains available as a convenience composition.
+Target: DeepSeek Harness `0.2.1-rc.3`. **Minimum supported DSH: >=0.2.1-rc.3; earlier versions are unsupported.** Each capability declares its own `dsh.bundle.patch` and can be added to a DSH profile separately. The combined `bundles/dsh-meeting` package remains available as a convenience composition.
 
 ## Profile and dependency order
 
 Initialize a new Web-based profile to supply the DSH Session, Tools and Web services:
 
 ```sh
-pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 --profile meeting --from-default-profile web --dump-default-config
+pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 --profile meeting --from-default-profile web --dump-default-config
 ```
 
 Then add only the capabilities needed, in dependency order:
 
 ```sh
-pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-context
-pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-speaker
-pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.0-rc.2
-pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-capture
-pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/meeting-ui
+pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add ./packages/meeting-context
+pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add ./packages/meeting-speaker
+pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.1-rc.3
+pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add ./packages/meeting-capture
+pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add ./packages/meeting-ui
 ```
 
 - **Context** works with Tools + Sessions and has no recording dependency.
@@ -28,10 +28,10 @@ pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile meeting add ./packages/mee
 Verify configuration composition (this check does not require a microphone or model):
 
 ```sh
-pnpm dlx @deepseek-ai/dsh@0.2.0-rc.2 --profile meeting --dump-config
+pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 --profile meeting --dump-config
 ```
 
-The printed configuration must include `meeting-context`, `meeting-speaker`, `speech-to-text`, `speech-to-text-sensevoice`, and `meeting-capture`. Do not confuse bundle registration with an end-to-end working microphone; browser→Host transport is a later milestone.
+The printed configuration must include `meeting-context`, `meeting-speaker`, `speech-to-text`, `speech-to-text-sensevoice`, and `meeting-capture`. Configuration inspection alone does not verify Sidebar activation, system audio, official SenseVoice or LLM summarization. Follow the manual Desktop acceptance guide.
 
 ## Workspace storage and privacy
 
@@ -47,6 +47,10 @@ The mapping hashes the opaque DSH Session ID for safe cross-platform file paths;
 If `Session.header.cwd` is absent, the fallback Workspace is the Host process's current working directory, as in the DSH no-cwd shell default. This is still a Workspace, **never DSH_HOME**.
 
 Workspace confinement is checked against canonical filesystem paths. Existing symlinks that lead the meeting root, Session directory, audio directory, or state file outside the selected Session Workspace are rejected rather than silently followed. There is no migration of recordings into DSH_HOME.
+
+## Client bundle contract
+
+The Meeting UI client must register a classic-script lazy-CJS factory through `window.__ModuleLoader__.load`; a top-level ESM `import` is unsupported by the DSH Client Loader. Build with the repository's `pnpm run build` (which also runs `check:client`) rather than compiling the Client directly as ESM. The output includes module-table externals and compiled CSS Modules. This automated artifact check is not a substitute for a restarted Desktop test.
 
 ## Meeting Sidebar P0
 The new Meeting tab is contributed through DSH's official right Sidebar Slot. Its Start/Stop controls capture Windows x64 **system playback** using a pinned, MIT-licensed native WASAPI source adaptation (based on `loopback-capture@3.0.2`), not a browser microphone.
