@@ -1,5 +1,5 @@
 /** Durable summary cursors count complete segments, not prompt characters. */
-import type { MeetingLine } from '@ri0n72y/dsh-meeting-context'
+import type { MeetingLine } from '@ri0n72y/dsh-meeting/context'
 
 export function summaryCursor(markdown: string): number {
   const match = markdown.match(/<!-- meeting-covered: (\d+) -->/)

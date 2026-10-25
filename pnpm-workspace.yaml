@@ -1,11 +1,5 @@
 packages:
-  - packages/*
-  - bundles/*
+  - .
 
 allowBuilds:
   esbuild: true
-
-# Keep Cordis's optional peers on one module identity for DSH 0.2.1-rc.3.
-overrides:
-  '@deepseek-ai/cordis-plugin-include': '1.0.10'
-  '@deepseek-ai/cordis-plugin-loader': '1.0.6'

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { summaryCursor, transcriptBatch } from '../packages/meeting-ui/src/summary-batch.js'
+import { summaryCursor, transcriptBatch } from '../src/ui/summary-batch.js'
 
 test('summary cursor accepts only valid nonnegative integer checkpoints', () => {
   assert.equal(summaryCursor('empty'), 0)

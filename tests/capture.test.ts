@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { ContinuousCapture } from '../packages/meeting-capture/src/continuous.js'
-import { SAMPLE_RATE, decodeWav } from '../packages/meeting-capture/src/wav.js'
+import { ContinuousCapture } from '../src/capture/continuous.js'
+import { SAMPLE_RATE, decodeWav } from '../src/capture/wav.js'
 
 const voiced = (seconds: number): Float32Array => new Float32Array(SAMPLE_RATE * seconds).fill(0.2)
 

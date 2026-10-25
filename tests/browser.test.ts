@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { BrowserMicrophone } from '../packages/meeting-capture/src/browser.js'
+import { BrowserMicrophone } from '../src/capture/browser.js'
 
 test('concurrent microphone permissions cannot acquire multiple active streams', async () => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, 'navigator')

@@ -1,19 +1,22 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": [
-    "tests/**/*.ts"
-  ],
   "compilerOptions": {
+    "jsx": "react-jsx",
     "paths": {
-      "@ri0n72y/dsh-meeting-capture": [
-        "./packages/meeting-capture/src/index.ts"
+      "@ri0n72y/dsh-meeting/context": [
+        "./src/context/index.ts"
       ],
-      "@ri0n72y/dsh-meeting-context": [
-        "./packages/meeting-context/src/index.ts"
+      "@ri0n72y/dsh-meeting/speaker": [
+        "./src/speaker/index.ts"
       ],
-      "@ri0n72y/dsh-meeting-speaker": [
-        "./packages/meeting-speaker/src/index.ts"
+      "@ri0n72y/dsh-meeting/capture": [
+        "./src/capture/index.ts"
       ]
     }
-  }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts"
+  ]
 }

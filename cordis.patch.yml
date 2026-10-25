@@ -1,14 +1,14 @@
 - insert:
     - id: meeting-context
-      name: '@ri0n72y/dsh-meeting-context'
+      name: '@ri0n72y/dsh-meeting/context'
     - id: meeting-speaker
-      name: '@ri0n72y/dsh-meeting-speaker'
+      name: '@ri0n72y/dsh-meeting/speaker'
       config:
         modelPath: ''
         segmentationModelPath: ''
     - id: meeting-capture
-      name: '@ri0n72y/dsh-meeting-capture'
+      name: '@ri0n72y/dsh-meeting/capture'
     - id: meeting-control
-      name: '@ri0n72y/dsh-meeting-ui'
+      name: '@ri0n72y/dsh-meeting'
       config:
         summaryIntervalMs: 900000

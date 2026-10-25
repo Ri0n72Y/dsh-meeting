@@ -1,16 +1,15 @@
 # dsh-meeting
 
-Session-scoped meeting recording and transcription plugin for **DeepSeek Harness >=0.2.1-rc.3** (Node.js 24). The verification target is `0.2.1-rc.3`; later versions require separate runtime confirmation. The DSH right Sidebar starts/stops Windows x64 system-playback capture and displays read-only Markdown transcript and rolling summary.
+DSH **>=0.2.1-rc.3** meeting bundle for Windows Desktop: system-audio recording, official SenseVoice transcription, a right Sidebar transcript, and periodic/final LLM summaries.
 
-- `meeting-context`: durable Session state, transcript and summary in the Session Workspace.
-- `meeting-capture`: WASAPI → 16 kHz PCM → bounded WAV persistence → official `sensevoice-local` transcription.
-- `meeting-speaker`: optional local speaker identification.
-- `meeting-ui`: DSH Sidebar controls, Typert Remote, summary scheduling.
+Install in **DSH Desktop → Plugins → Install** using the repository URL:
 
-The combined bundle is `bundles/dsh-meeting/cordis.patch.yml`. Install the official DSH Voice Input Bundle for SpeechToText; this project does not provide a replacement ASR. The Windows N-API addon is built from `packages/meeting-capture/native`.
+```text
+https://github.com/Ri0n72Y/dsh-meeting
+```
 
-## Verification
+The repository root **is the DSH bundle** (`package.json` → `dsh.bundle.patch` → `cordis.patch.yml`). Git installations run the package's `prepare` build, including a Windows WASAPI addon build. Approve only the build scripts you trust; Node.js 24, CMake and MSVC Build Tools are required on Windows. The official Voice Input / `sensevoice-local` provider must also be enabled.
 
-Automated CI is limited to focused contract tests, one typecheck, one build and the built Client lazy-CJS contract check. Native changes require a clean local Windows build and load check; DSH installation and end-to-end behavior are verified manually. See [verification boundaries](docs/testing-contracts.md), [installation](docs/installation.md) and [Windows acceptance](docs/windows-acceptance.md).
+The four Cordis capabilities (`context`, `speaker`, `capture`, root UI) remain independent plugin entries within one installable npm package. Audio and Markdown are stored in each Session Workspace.
 
-Focused CI does **not** establish native Windows compatibility, a working desktop audio source or real SenseVoice/LLM output. Issue [#7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) requires physical Windows DSH acceptance from Sidebar Start through final summary before the feature is considered complete.
+For detailed [installation requirements](docs/installation.md) and the [Windows acceptance procedure](docs/windows-acceptance.md), see the linked guides. Focused CI checks source, build and the generated Client registration; it **does not** prove Desktop recording or model readiness. [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) tracks real-device acceptance.

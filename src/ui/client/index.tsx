@@ -23,14 +23,14 @@ export const inject = ['remote', 'slots', 'sidebarRightTabs']
 
 function registerUi(ctx: Context): void {
   ctx.effect(() => ctx.sidebarRightTabs.register({
-    id: '@ri0n72y/dsh-meeting-ui', kind: 'meeting', priority: 'extension',
+    id: '@ri0n72y/dsh-meeting', kind: 'meeting', priority: 'extension',
     title: () => '会议',
     guide: [{ id: 'meeting', order: 30, title: () => '会议录音',
       description: () => '录制系统声音，实时查看原文与会议总结' }],
   }), 'meeting-ui: Sidebar tab')
   ctx.slots.inject('sidebar.right.pane.tab', () =>
     ctx.slots.register({
-      name: 'sidebar.right.pane.tab', key: '@ri0n72y/dsh-meeting-ui',
+      name: 'sidebar.right.pane.tab', key: '@ri0n72y/dsh-meeting',
       inject: () => ({ meetingRemote: (ctx.remote as unknown as { meeting: MeetingClientRemote }).meeting }),
     }, MeetingBody))
 }

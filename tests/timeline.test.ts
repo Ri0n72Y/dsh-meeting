@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SpeakerTimeline } from '../packages/meeting-speaker/src/timeline.js'
-import { SpeakerTracker } from '../packages/meeting-speaker/src/tracker.js'
+import { SpeakerTimeline } from '../src/speaker/timeline.js'
+import { SpeakerTracker } from '../src/speaker/tracker.js'
 
 test('speaker turns split one mixed window without pretending ASR words align', () => {
   const tracker = new SpeakerTracker({

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SpeakerTracker, type EmbeddingEngine } from '../packages/meeting-speaker/src/tracker.js'
+import { SpeakerTracker, type EmbeddingEngine } from '../src/speaker/tracker.js'
 
 function engine(): EmbeddingEngine {
   return {

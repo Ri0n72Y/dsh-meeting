@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { basename, dirname, resolve } from 'node:path'
 import { transform } from 'lightningcss'
 
-const packageId = '@ri0n72y/dsh-meeting-ui'
+const packageId = '@ri0n72y/dsh-meeting'
 const virtualPrefix = '\0meeting-css-module:'
 const virtualSuffix = '.mjs'
 const shared = new Set([
@@ -15,7 +15,7 @@ const shared = new Set([
 ])
 
 export default defineConfig({
-  entry: { index: 'src/client/index.tsx' },
+  entry: { index: 'src/ui/client/index.tsx' },
   outDir: 'dist/client',
   format: 'cjs',
   platform: 'browser',

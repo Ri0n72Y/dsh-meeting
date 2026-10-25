@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SessionCaptureRegistry } from '../packages/meeting-capture/src/lifecycle.js'
-import { ContinuousCapture } from '../packages/meeting-capture/src/continuous.js'
-import { SAMPLE_RATE } from '../packages/meeting-capture/src/wav.js'
+import { SessionCaptureRegistry } from '../src/capture/lifecycle.js'
+import { ContinuousCapture } from '../src/capture/continuous.js'
+import { SAMPLE_RATE } from '../src/capture/wav.js'
 
 function capture() {
   return new ContinuousCapture({

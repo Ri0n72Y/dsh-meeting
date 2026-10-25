@@ -1,30 +1,11 @@
-# Multi-package TypeScript contract
+# Root DSH bundle and independent Cordis services
 
-Based on the proven multi-plugin layout in [dsh-mindppt](https://github.com/Ri0n72Y/dsh-mindppt), not a one-off TS2717 suppression.
+The repository root is one installable DSH bundle, matching the official `dsh.bundle.patch` contract. A Git URL resolves to this package's root `package.json`, which declares the `./cordis.patch.yml` layer.
 
-## One plugin = one compilation scope
+Four Host plugin entry points remain separate Cordis services: `./context`, `./speaker`, `./capture`, and the package root (Meeting Control). The same root package declares its `./client` entry for the right Sidebar. The package's source is organized under `src/<capability>/`; built artifacts are under `dist/<capability>/index.js`. This preserves boundaries without multiple `workspace:*` runtime packages, which cannot be installed independently from one Git source.
 
-Each Cordis service package owns `src` and `tsconfig.json`, extends a shared `tsconfig.base.json`, and has its own `typecheck` script. The repository's top-level typecheck runs every plugin plus the tests. No source file is manually excluded, and `skipLibCheck` is **not** used to conceal conflicts in our source.
+All Context extensions share one TypeScript source identity during development via `tsconfig.json` path mappings. Host cross-capability imports use only public self-package subpaths and remain **external** at build time to avoid duplicating service instances. Client code is a separate DSH lazy-CJS factory; React and shared UI primitives are resolved from DSH's browser module table. It is registered under the package's bare name so the Host's root Loader row owns its lifecycle.
 
-## Keep one Context augmentation identity
+The root `prepare` script makes a Git source installation self-building. On Windows x64 it also compiles `native/` from pinned WASAPI source; other platforms skip the Windows-only addon. Native build permission and toolchain prerequisites are explicit. Only `dist/**`, the bundle patch and required native sources/artifacts ship in the installed npm package.
 
-Cordis `declare module '@deepseek-ai/cordis'` extends the same Context across independently loaded services. Each workspace package exports both `development: ./src/index.ts` and release `types/default: ./dist/index.d.ts/js`. TypeScript uses `customConditions: ['development']` so all workspace references during development resolve to **one source identity**, never a mixture of source classes and their generated declarations. Release consumers see only the built artifacts.
-
-Do not solve TS2717 by deleting Context augmentations, widening services to `any`, or suppressing compiler diagnostics.
-
-## Verification boundaries
-
-Automated CI performs one source typecheck, focused contract tests and one build. Native C++ changes require a clean local Windows build and N-API load check; DSH profile/registration is verified during manual deployment. Desktop playback, SenseVoice and LLM remain release acceptance, not CI claims; see [testing contracts](testing-contracts.md) and [Windows acceptance](windows-acceptance.md).
-
-## Package dependency versions
-
-This is a third-party monorepo, not DSH's own source workspace. Use independently published versions:
-- `@deepseek-ai/cordis@4.0.4` (not `0.2.1-rc.3`)
-- `@deepseek-ai/schemastery@3.18.4`
-- DSH packages such as `@deepseek-ai/dsh-tools@0.2.1-rc.3`.
-
-Keep capability-to-capability boundaries in `peerDependencies: workspace:*`, use type-only imports for cross-plugin Context augmentations, and do not import another plugin's private implementation path from production code.
-
-The previous root-wide `tsc --noEmit` compiled *every* `packages/**/src` file while separately loading compiled `dist` declarations for package specifiers. Since Service classes carry different module identities, their Cordis Context merge failed with TS2717 despite printing apparently identical class names. The above contract addresses the identity mismatch rather than masking it.
-
-MeetingControl and the Sidebar are separate UI capabilities; test ownership follows each actual component boundary rather than duplicating multi-plugin flow simulations.
+The baseline is DSH `>=0.2.1-rc.3`, with source/build verification against `0.2.1-rc.3`. Runtime Windows Desktop acceptance remains manual in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7), not inferred from unit tests.

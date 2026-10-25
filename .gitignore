@@ -3,3 +3,5 @@ dist/
 lib/
 *.tsbuildinfo
 .pnpm-store/
+native/node_modules/
+native/build/

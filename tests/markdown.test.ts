@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MeetingStore } from '../packages/meeting-context/src/store.js'
-import { transcriptMarkdown } from '../packages/meeting-context/src/markdown.js'
+import { MeetingStore } from '../src/context/store.js'
+import { transcriptMarkdown } from '../src/context/markdown.js'
 
 test('live Session appends atomically projected Markdown, preserving unknown speaker', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'meeting-markdown-'))

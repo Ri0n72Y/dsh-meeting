@@ -1,69 +1,61 @@
-# Install and enable Meeting capabilities independently
+# Installing dsh-meeting
 
-Target: DeepSeek Harness `0.2.1-rc.3`. **Minimum supported DSH: >=0.2.1-rc.3; earlier versions are unsupported.** Each capability declares its own `dsh.bundle.patch` and can be added to a DSH profile separately. The combined `bundles/dsh-meeting` package remains available as a convenience composition.
+**Host:** DSH Desktop `0.2.1-rc.3` or later (only `0.2.1-rc.3` is the validated source/build baseline). Older DSH versions are unsupported.
 
-## Profile and dependency order
+## GitHub installation (recommended)
 
-Initialize a new Web-based profile to supply the DSH Session, Tools and Web services:
+In **DSH Desktop → Plugins → Install**, enter the repository URL:
 
-```sh
-pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 --profile meeting --from-default-profile web --dump-default-config
+```text
+https://github.com/Ri0n72Y/dsh-meeting
 ```
 
-Then add only the capabilities needed, in dependency order:
+The root `package.json` declares `dsh.bundle.patch`. DSH installs the root bundle and its `cordis.patch.yml`; there is **no** separate `bundles/` package or `packages/*` to install. If the installer displays “This package does not declare a bundle”, check that the Git source is the current repository root, not an older version or an internal directory.
 
-```sh
-pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add ./packages/meeting-context
-pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add ./packages/meeting-speaker
-pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add @deepseek-ai/dsh-experimental-voice-input-bundle@0.2.1-rc.3
-pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add ./packages/meeting-capture
-pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 plugin --profile meeting add ./packages/meeting-ui
+DSH Git installs download **source**, so the root package's `prepare` script builds the Host/Client exports and, on Windows x64, the WASAPI native addon. DSH/pnpm 11 may require explicit **build-script approval**. Approval executes the package's code with the installing user's permissions. Review the source and approve only this repository's intended build script; for reproducibility pin a reviewed Git commit, for example `github:Ri0n72Y/dsh-meeting#<commit>`. Retry the installation after approving the requested build. No build permission is required for an already-built npm tarball.
+
+**Windows prerequisites for native capture:** Node.js 24, CMake, Visual Studio C++ Build Tools (MSVC), connectivity for CMake FetchContent dependencies. Missing prerequisites make the Git `prepare` installation fail; do not misreport that as a successful install. No prebuilt WASAPI binary from upstream is substituted.
+
+The official **DSH Voice Input Bundle** and its `sensevoice-local` provider are independent requirements. Install/enable the official bundle through DSH's plugin manager before attempting live transcription. This project does not ship SenseVoice models or an alternative ASR.
+
+## Local source checkout
+
+For developing or installing from a local checkout:
+
+```powershell
+git clone https://github.com/Ri0n72Y/dsh-meeting.git
+cd dsh-meeting
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm run native:build
 ```
 
-- **Context** works with Tools + Sessions and has no recording dependency.
-- **Speaker** registers a service independently; native model files are optional until configured.
-- **Capture** requires Context and the official SpeechToText provider `sensevoice-local`; it does **not** replace the official Voice Input Bundle. Speaker is optional at runtime.
-- The **combined bundle** activates the three Meeting services together but still requires the official Voice Input Bundle.
+In the DSH plugin manager select the **absolute path to the repository root**, or use the DSH CLI with a link to that directory:
 
-Verify configuration composition (this check does not require a microphone or model):
-
-```sh
-pnpm dlx @deepseek-ai/dsh@0.2.1-rc.3 --profile meeting --dump-config
+```powershell
+dsh plugin --profile meeting add "link:C:\\path\\to\\dsh-meeting"
 ```
 
-The printed configuration must include `meeting-context`, `meeting-speaker`, `speech-to-text`, `speech-to-text-sensevoice`, and `meeting-capture`. Configuration inspection alone does not verify Sidebar activation, system audio, official SenseVoice or LLM summarization. Follow the manual Desktop acceptance guide.
+The repository `cordis.patch.yml` mounts the four entry points from one npm package:
 
-## Workspace storage and privacy
+- `@ri0n72y/dsh-meeting/context` — Session-scoped storage
+- `@ri0n72y/dsh-meeting/speaker` — optional local speaker recognition
+- `@ri0n72y/dsh-meeting/capture` — persistent WAV capture and official ASR
+- `@ri0n72y/dsh-meeting` — Host Meeting Control plus the `./client` right Sidebar
 
-Recordings stay in the Session Workspace, at:
+To rebuild the native addon cleanly after a native-source change, delete `native/build`, run `pnpm run native:build`, and verify the binary in `native/build/Release/loopback_capture_addon.node`. Then fully restart Desktop.
+
+## Session storage and acceptance
+
+Recording data stays inside the selected Session Workspace:
 
 ```text
 <Session Workspace>/.dsh-meeting/<sha256(sessionId)>/state.json
 <Session Workspace>/.dsh-meeting/<sha256(sessionId)>/audio/000000.wav
+<Session Workspace>/.dsh-meeting/<sha256(sessionId)>/transcript.md
+<Session Workspace>/.dsh-meeting/<sha256(sessionId)>/summary.md
 ```
 
-The mapping hashes the opaque DSH Session ID for safe cross-platform file paths; `state.json` retains the original ID and checks it on read. A safe ignore rule is created non-destructively in each hashed Session directory. A missing `.dsh-meeting/.gitignore` is also created, but an existing user-maintained root ignore file is **never overwritten**. Ordinary Git adds exclude transcript and WAV files under a protected Session directory; a pre-existing unsafe Session-level ignore file causes the recorder to fail closed. Forced Git adds and non-Git syncing remain the user's responsibility. 
+The Session ID is hashed for safe path names. Existing Session ignore files and symlinks escaping the Workspace are not silently overwritten or followed.
 
-If `Session.header.cwd` is absent, the fallback Workspace is the Host process's current working directory, as in the DSH no-cwd shell default. This is still a Workspace, **never DSH_HOME**.
-
-Workspace confinement is checked against canonical filesystem paths. Existing symlinks that lead the meeting root, Session directory, audio directory, or state file outside the selected Session Workspace are rejected rather than silently followed. There is no migration of recordings into DSH_HOME.
-
-## Client bundle contract
-
-The Meeting UI client must register a classic-script lazy-CJS factory through `window.__ModuleLoader__.load`; a top-level ESM `import` is unsupported by the DSH Client Loader. Build with the repository's `pnpm run build` (which also runs `check:client`) rather than compiling the Client directly as ESM. The output includes module-table externals and compiled CSS Modules. This automated artifact check is not a substitute for a restarted Desktop test.
-
-## Meeting Sidebar P0
-The new Meeting tab is contributed through DSH's official right Sidebar Slot. Its Start/Stop controls capture Windows x64 **system playback** using a pinned, MIT-licensed native WASAPI source adaptation (based on `loopback-capture@3.0.2`), not a browser microphone.
-
-Before installing MeetingCapture on a Windows x64 source checkout (and whenever its native source or build configuration changes), build its addon cleanly with Node 24, MSVC Build Tools and CMake:
-
-```powershell
-cd packages/meeting-capture/native
-if (Test-Path .\build) { Remove-Item .\build -Recurse -Force }
-npm install --no-package-lock --no-audit --no-fund --ignore-scripts
-npm run build
-node -e "const addon = require('./build/Release/loopback_capture_addon.node'); const source = new addon.LoopbackCapture(); if (typeof source.startSystemAudio !== 'function' || typeof source.stop !== 'function') process.exit(1)"
-cd ../../..
-```
-
-The local addon (inside `native/build/Release/`) preserves WASAPI silent frames and emits an ordered end-of-callback sentinel on Stop. The Host does not use the original upstream prebuilt binary, because that binary drops silence and has no reliable callback flush acknowledgment. The clean build and load check are **manual**, not cloud CI. Verify actual audio capture, DSH registration and lifecycle in the target Windows Desktop environment; record the result against [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7). Markdown transcript and summary remain inside the Session Workspace. Auto summary defaults to 15 minutes and uses the live Session's own LLM route only when its Agent is idle.
+A successful Git installation or lazy-CJS bundle check is **not** a Windows Desktop acceptance result. In [Issue #10](https://github.com/Ri0n72Y/dsh-meeting/issues/10), verify Sidebar boot on a restarted `0.2.1-rc.3` Desktop. Continue the full system-audio → SenseVoice → live transcript → final summary journey in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) following [Windows acceptance](windows-acceptance.md).

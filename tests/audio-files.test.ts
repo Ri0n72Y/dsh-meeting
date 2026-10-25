@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { audioCheckpoint, saveAudioWindow } from '../packages/meeting-capture/src/audio-files.js'
-import { encodeWav } from '../packages/meeting-capture/src/wav.js'
+import { audioCheckpoint, saveAudioWindow } from '../src/capture/audio-files.js'
+import { encodeWav } from '../src/capture/wav.js'
 
 test('durably saved recordings resume with monotone sample-based time offsets', async () => {
   const root = await mkdtemp(join(tmpdir(), 'meeting-windows-'))
