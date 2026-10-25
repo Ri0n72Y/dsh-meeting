@@ -24,3 +24,5 @@ jobs:
         run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
+      - name: Verify committed lib matches source
+        run: pnpm run check:prebuilt

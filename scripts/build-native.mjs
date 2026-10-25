@@ -1,5 +1,5 @@
-/** Git prepare compiles the required WASAPI N-API addon on Windows x64.
- * No native build is attempted on platforms where this capture cannot run. */
+/** Explicitly build the WASAPI N-API addon on Windows x64.
+ * This script is NOT executed by the Git installation lifecycle. */
 import { spawnSync } from 'node:child_process'
 if (process.platform !== 'win32' || process.arch !== 'x64') {
   console.log('Meeting WASAPI native build: skipped (requires Windows x64)')
