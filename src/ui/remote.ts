@@ -30,6 +30,6 @@ const methods: readonly InvocationDescriptor[] = [
     cancellation: { parameter: 'signal' }, result: codec },
 ]
 export const contribution: TypertRemoteContribution = {
-  package: '@ri0n72y/dsh-meeting-ui',
+  package: '@ri0n72y/dsh-meeting',
   descriptors: methods,
 }

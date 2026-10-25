@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { encodeWav, decodeWav, SAMPLE_RATE } from '../packages/meeting-capture/src/wav.js'
+import { encodeWav, decodeWav, SAMPLE_RATE } from '../src/capture/wav.js'
 
 test('canonical PCM16 WAV preserves length, sign and 16 kHz format at quantization boundaries', () => {
   assert.equal(SAMPLE_RATE, 16_000)

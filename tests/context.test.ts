@@ -3,8 +3,8 @@ import { test } from 'node:test'
 import { mkdtemp, rm, readFile, mkdir, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MeetingStore, sessionDirectoryName, workspaceMeetingRoot } from '../packages/meeting-context/src/store.js'
-import { SessionWorkspaceCache } from '../packages/meeting-context/src/cache.js'
+import { MeetingStore, sessionDirectoryName, workspaceMeetingRoot } from '../src/context/store.js'
+import { SessionWorkspaceCache } from '../src/context/cache.js'
 
 test('Session-scoped journal survives service recreation and remains isolated', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'dsh-meeting-'))

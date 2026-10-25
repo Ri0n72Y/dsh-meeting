@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { downmix48k, WindowsLoopback } from '../packages/meeting-capture/src/windows-loopback.js'
+import { downmix48k, WindowsLoopback } from '../src/capture/windows-loopback.js'
 
 test('48 kHz stereo 16-bit PCM downmixes into mono 16 kHz', () => {
   const b = Buffer.alloc(12 * 4)

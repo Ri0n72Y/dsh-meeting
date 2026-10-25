@@ -1,5 +1,0 @@
-- insert:
-    - id: meeting-control
-      name: '@ri0n72y/dsh-meeting-ui'
-      config:
-        summaryIntervalMs: 900000

@@ -51,8 +51,8 @@ export class WindowsLoopback {
       this.native = this.createNative()
     } else {
       let addon: LoopbackModule
-      try { addon = require('../native/build/Release/loopback_capture_addon.node') as LoopbackModule }
-      catch (cause) { throw new Error('Meeting WASAPI native addon is not built for Windows x64; build packages/meeting-capture/native', { cause }) }
+      try { addon = require('../../native/build/Release/loopback_capture_addon.node') as LoopbackModule }
+      catch (cause) { throw new Error('Meeting WASAPI native addon is not built for Windows x64; build native/', { cause }) }
       this.native = new addon.LoopbackCapture()
     }
     this.nativeEnd = new Promise<void>(resolve => { this.resolveNativeEnd = resolve })

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { SummaryJobs } from '../packages/meeting-ui/src/summary-jobs.js'
+import { SummaryJobs } from '../src/ui/summary-jobs.js'
 
 function gate() {
   let release!: () => void
