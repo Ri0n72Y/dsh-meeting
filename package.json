@@ -9,32 +9,32 @@
     "type": "git",
     "url": "git+https://github.com/Ri0n72Y/dsh-meeting.git"
   },
-  "main": "./dist/ui/index.js",
-  "types": "./dist/ui/index.d.ts",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/ui/index.d.ts",
-      "default": "./dist/ui/index.js"
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
     },
     "./client": {
-      "default": "./dist/client/index.js"
+      "default": "./lib/client/index.js"
     },
     "./context": {
-      "types": "./dist/context/index.d.ts",
-      "default": "./dist/context/index.js"
+      "types": "./lib/context/index.d.ts",
+      "default": "./lib/context/index.js"
     },
     "./capture": {
-      "types": "./dist/capture/index.d.ts",
-      "default": "./dist/capture/index.js"
+      "types": "./lib/capture/index.d.ts",
+      "default": "./lib/capture/index.js"
     },
     "./speaker": {
-      "types": "./dist/speaker/index.d.ts",
-      "default": "./dist/speaker/index.js"
+      "types": "./lib/speaker/index.d.ts",
+      "default": "./lib/speaker/index.js"
     },
     "./package.json": "./package.json"
   },
   "files": [
-    "dist/**",
+    "lib/**",
     "cordis.patch.yml",
     "native/CMakeLists.txt",
     "native/package.json",
@@ -45,13 +45,13 @@
     "scripts/build-native.mjs"
   ],
   "scripts": {
-    "build": "tsdown --config tsdown.host.config.mjs && tsdown --config tsdown.client.config.mjs && npm run check:client && npm run check:install",
-    "prepare": "npm run build && npm run native:build",
+    "build": "node scripts/clean-lib.mjs && tsdown --config tsdown.host.config.mjs && tsdown --config tsdown.client.config.mjs && npm run check:client && npm run check:install",
     "native:build": "node scripts/build-native.mjs",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check:client": "node scripts/check-meeting-client.mjs",
-    "check:install": "node scripts/check-installable.mjs"
+    "check:install": "node scripts/check-installable.mjs",
+    "check:prebuilt": "node scripts/check-committed-lib.mjs"
   },
   "engines": {
     "node": ">=24",

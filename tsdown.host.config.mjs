@@ -4,7 +4,7 @@ const capabilities = ['context', 'speaker', 'capture', 'ui']
 export default defineConfig(capabilities.map(name => ({
   name: 'meeting/' + name,
   entry: { index: 'src/' + name + '/index.ts' },
-  outDir: 'dist/' + name,
+  outDir: name === 'ui' ? 'lib' : 'lib/' + name,
   format: 'esm',
   platform: 'node',
   dts: true,

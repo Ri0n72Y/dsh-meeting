@@ -1,4 +1,4 @@
-/** Inspect the actual npm pack list; Git prepares the same root package. */
+/** Check the npm pack content of the prebuilt Git-installable bundle. */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
@@ -7,16 +7,18 @@ assert.equal(pkg.name, '@ri0n72y/dsh-meeting')
 assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml')
 assert.equal(pkg.dsh.client.platform, 'web')
 assert.equal(pkg.engines.dsh, '>=0.2.1-rc.3')
-assert.match(pkg.scripts.prepare, /build/)
+for (const script of ['prepare', 'prepack', 'install', 'postinstall']) {
+  assert.equal(pkg.scripts?.[script], undefined, 'script-free Git installation must not execute ' + script)
+}
 const installed = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
   encoding: 'utf8', cwd: new URL('..', import.meta.url),
 }))
 const files = new Set(installed[0].files.map(file => file.path))
 for (const path of [
   'cordis.patch.yml',
-  'dist/ui/index.js', 'dist/context/index.js',
-  'dist/capture/index.js', 'dist/speaker/index.js',
-  'dist/client/index.js',
+  'lib/index.js', 'lib/context/index.js',
+  'lib/capture/index.js', 'lib/speaker/index.js',
+  'lib/client/index.js', 'lib/index.d.ts',
   'native/CMakeLists.txt', 'native/package.json',
   'native/src/Addon.cpp', 'native/src/platform/windows/LoopbackCapture.cpp',
   'scripts/build-native.mjs',

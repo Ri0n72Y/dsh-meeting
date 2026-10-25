@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { Script } from 'node:vm'
 
-const content = await readFile(new URL('../dist/client/index.js', import.meta.url), 'utf8')
+const content = await readFile(new URL('../lib/client/index.js', import.meta.url), 'utf8')
 const registrations = []
 const script = new Script(content, { filename: 'meeting-client.js' })
 script.runInNewContext({ window: { __ModuleLoader__: { load: registration => registrations.push(registration) } } })
