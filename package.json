@@ -1,6 +1,6 @@
 {
   "name": "@ri0n72y/dsh-meeting",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Windows system-audio meeting capture, SenseVoice transcription and Sidebar summaries for DeepSeek Harness",
   "license": "MIT",
   "type": "module",

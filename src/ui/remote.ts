@@ -1,5 +1,5 @@
 /** Explicit Typert contract for this independently published third-party plugin.
- * src-json codecs use the official Gateway's JSON boundary checks. */
+ * Gateway requires strict input codecs; JSON results may use src-json. */
 import type { TypertRemoteContribution, InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
 
 export interface MeetingView {
@@ -19,7 +19,19 @@ export interface MeetingView {
   error?: string
 }
 const codec = { mode: 'src-json' } as const
-const param = (name: string) => ({ name, wire: name, source: 'json' as const, codec })
+const sessionIdCodec = {
+  mode: 'strict' as const,
+  typeSymbol: '@ri0n72y/dsh-meeting#SessionId',
+  create: () => ({
+    parse(value: unknown): string {
+      if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError('sessionId must be a non-empty string')
+      }
+      return value
+    },
+  }),
+}
+const param = (name: string) => ({ name, wire: name, source: 'json' as const, codec: sessionIdCodec })
 const methods: readonly InvocationDescriptor[] = [
   ...['snapshot', 'start', 'stop', 'summarize', 'prepare'].map(method => ({
     id: 'dsh-meeting-control.' + method, service: 'meetingControl', namespace: 'meeting',
