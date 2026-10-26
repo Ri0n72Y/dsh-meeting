@@ -1,0 +1,21 @@
+name: Online meeting sandbox
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  runtime-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.28.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Mount real DSH/Cordis services and exercise Session PCM + tools
+        run: timeout --signal=TERM --kill-after=5s 90s pnpm --dir packages/meeting-capture exec node ./sandbox-smoke.mjs
