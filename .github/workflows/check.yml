@@ -24,5 +24,7 @@ jobs:
         run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
+      - name: Show generated lib changes for diagnostic
+        run: git --no-pager diff -- lib/index.js lib/client/index.js
       - name: Verify committed lib matches source
         run: pnpm run check:prebuilt
