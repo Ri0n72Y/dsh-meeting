@@ -24,10 +24,5 @@ jobs:
         run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: transcript-built-lib
-          path: lib/
-          retention-days: 1
       - name: Verify committed lib matches source
         run: pnpm run check:prebuilt
