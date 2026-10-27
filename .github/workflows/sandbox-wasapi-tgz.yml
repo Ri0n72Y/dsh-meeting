@@ -1,0 +1,87 @@
+name: Sandbox Windows WASAPI tgz
+
+on:
+  push:
+    branches:
+      - scratch/windows-wasapi-tgz
+
+permissions:
+  contents: read
+
+jobs:
+  build-native-test-bundle:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build Windows x64 addon with existing native toolchain
+        shell: pwsh
+        run: |
+          npm run native:build
+          if ($LASTEXITCODE -ne 0) { throw 'native:build failed' }
+
+      - name: Verify WASAPI module loads under Node 22
+        shell: pwsh
+        run: |
+          node -e "const a=require('./native/build/Release/loopback_capture_addon.node');if(typeof a.LoopbackCapture!=='function')throw Error('missing LoopbackCapture');console.log('Node 22 WASAPI N-API import OK')"
+          if ($LASTEXITCODE -ne 0) { throw 'Node 22 load failed' }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Verify WASAPI module loads under Node 24
+        shell: pwsh
+        run: |
+          node -e "const a=require('./native/build/Release/loopback_capture_addon.node');if(typeof a.LoopbackCapture!=='function')throw Error('missing LoopbackCapture');console.log('Node 24 WASAPI N-API import OK')"
+          if ($LASTEXITCODE -ne 0) { throw 'Node 24 load failed' }
+
+      - name: Package full installable tgz and verify contents
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force output | Out-Null
+          npm pack --ignore-scripts --pack-destination output
+          if ($LASTEXITCODE -ne 0) { throw 'npm pack failed' }
+
+          $packages = @(Get-ChildItem output -Filter '*.tgz')
+          if ($packages.Count -ne 1) { throw 'Expected one tgz file' }
+          $package = $packages[0]
+          $entries = @(tar -tzf $package.FullName)
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot list tgz' }
+          foreach ($path in @(
+            'package/package.json',
+            'package/cordis.patch.yml',
+            'package/lib/index.js',
+            'package/lib/client/index.js',
+            'package/native/build/Release/loopback_capture_addon.node'
+          )) {
+            if ($entries -notcontains $path) { throw "Missing tarball entry: $path" }
+          }
+          New-Item -ItemType Directory -Force extracted | Out-Null
+          tar -xzf $package.FullName -C extracted
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot extract tgz' }
+          node -e "const a=require('./extracted/package/native/build/Release/loopback_capture_addon.node');if(typeof a.LoopbackCapture!=='function')throw Error('packed binary cannot load'); console.log('Packed binary load OK')"
+          if ($LASTEXITCODE -ne 0) { throw 'Packed WASAPI binary failed to load' }
+
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $filename = "dsh-meeting-v$($pkg.version)-win32-x64-TEST.tgz"
+          Rename-Item -LiteralPath $package.FullName -NewName $filename
+          $binary = Join-Path output $filename
+          $hash = (Get-FileHash $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $filename" | Set-Content -LiteralPath "$binary.sha256" -Encoding utf8
+          Write-Host "TEST PACKAGE: $filename"
+          Write-Host "PACKAGE SHA256: $hash"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-meeting-win32-x64-test-tgz
+          path: |
+            output/*.tgz
+            output/*.sha256
+          retention-days: 14
+          if-no-files-found: error
