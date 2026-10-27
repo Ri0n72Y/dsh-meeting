@@ -1,5 +1,6 @@
-/** Durable summary cursors count complete segments, not prompt characters. */
+/** Durable summary cursors count complete ASR segments, not rendered paragraphs. */
 import type { MeetingLine } from '@ri0n72y/dsh-meeting/context'
+import { transcriptParagraphs, transcriptTimestamp } from '@ri0n72y/dsh-meeting/context'
 
 export function summaryCursor(markdown: string): number {
   const match = markdown.match(/<!-- meeting-covered: (\d+) -->/)
@@ -11,14 +12,13 @@ export function transcriptBatch(segments: readonly MeetingLine[], cursor: number
   const lines: string[] = []
   let length = 0
   let end = cursor
-  while (end < segments.length) {
-    const line = segments[end]!
-    const row = '[' + (line.startMs / 1000).toFixed(1) + 's] '
-      + (line.speakerId ?? '未知说话人') + ': ' + line.text
-    if (lines.length && length + row.length + 1 > 25_000) break
+  for (const paragraph of transcriptParagraphs(segments.slice(cursor))) {
+    const row = '[' + transcriptTimestamp(paragraph.startMs) + '] '
+      + (paragraph.speakerId ? paragraph.speakerId + ': ' : '') + paragraph.text
+    if (lines.length && length + row.length + 2 > 25_000) break
     lines.push(row)
-    length += row.length + 1
-    end++
+    length += row.length + 2
+    end += paragraph.segments
   }
-  return { text: lines.join('\n'), end }
+  return { text: lines.join('\n\n'), end }
 }
