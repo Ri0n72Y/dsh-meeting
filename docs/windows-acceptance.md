@@ -2,9 +2,9 @@
 
 This is a **manual release gate**, not part of each PR's focused CI. Run against actual DSH Desktop `0.2.1-rc.3` (the minimum supported release; newer releases need their own evidence) on Windows x64 with the official Voice Input Bundle and prepared `sensevoice-local` provider. Do not treat the Web-host error RPC, N-API module-load smoke, or mock PCM callbacks as substitutes.
 
-First confirm the GitHub URL installation accepts the root bundle and mounts the right Sidebar without Client Loader errors. The tracked `lib/` already supplies JavaScript; no Git `prepare` runs. Before starting system audio, explicitly build `native/build/Release/loopback_capture_addon.node` with `npm run native:build` as described in [installation](installation.md), then verify the module can load.
+First install the **Windows x64 Release `.tgz` asset URL**, not the bare GitHub repository URL. Confirm the release bundle installs and mounts the right Sidebar without Client Loader errors; the bundled `lib/` and prebuilt `native/build/Release/loopback_capture_addon.node` need no install scripts. Then attempt real system audio capture. The native `.node` import smoke on CI is not a substitute for real capture.
 
-When the native C++ source, CMake configuration or Node ABI target changes, first perform a **clean local Windows build and N-API load check** using the commands in [installation](installation.md). Delete the old `native/build` output before compiling and ensure the module loaded was newly built. Do not treat an existing binary as verification. DSH plugin registration is also checked in the installed local environment, not by a cloud Web workflow.
+When native C++ source, CMake configuration or Node-API target changes, require a **new published Release build** (the release job starts from a clean Windows runner) and Node 22/24 load checks. Verify the installed `.tgz` actually includes that release's binary; do not reuse an old archive. Real DSH plugin registration and system audio remain local Windows acceptance checks.
 
 For each check, record the date, DSH version, plugin HEAD, observed result, and supporting sanitized log or screenshot in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) or the release PR. A successful build without this evidence is **not** an acceptance result.
 

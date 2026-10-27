@@ -1,0 +1,98 @@
+name: Release Windows WASAPI plugin bundle
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: meeting-wasapi-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows-x64:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Match immutable tag to package version
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -ne "v$version") {
+            throw "Release tag $env:RELEASE_TAG does not match package version v$version"
+          }
+          if (-not (Test-Path 'lib/client/index.js') -or -not (Test-Path 'lib/index.js')) {
+            throw 'Committed Host/Client lib/ files are required for release packing'
+          }
+
+      - name: Build existing WASAPI N-API source
+        shell: pwsh
+        run: npm run native:build
+
+      - name: Load native addon with Node 22
+        shell: pwsh
+        run: |
+          node -e "const addon = require('./native/build/Release/loopback_capture_addon.node'); if (typeof addon.LoopbackCapture !== 'function') throw new Error('LoopbackCapture export missing')"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Load same native addon with Node 24
+        shell: pwsh
+        run: |
+          node -e "const addon = require('./native/build/Release/loopback_capture_addon.node'); if (typeof addon.LoopbackCapture !== 'function') throw new Error('LoopbackCapture export missing')"
+
+      - name: Pack and verify installable release bundle
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          npm pack --ignore-scripts --pack-destination dist
+          if ($LASTEXITCODE -ne 0) { throw 'npm pack failed' }
+
+          $archives = @(Get-ChildItem -Path dist -Filter '*.tgz')
+          if ($archives.Count -ne 1) { throw 'Expected exactly one npm release tarball' }
+          $archive = $archives[0]
+          $entries = @(tar -tzf $archive.FullName)
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect npm release tarball' }
+          foreach ($path in @(
+            'package/cordis.patch.yml',
+            'package/lib/index.js',
+            'package/lib/client/index.js',
+            'package/native/build/Release/loopback_capture_addon.node'
+          )) {
+            if ($entries -notcontains $path) { throw "Release tarball misses $path" }
+          }
+
+          $name = "dsh-meeting-$($env:RELEASE_TAG)-win32-x64.tgz"
+          Rename-Item -LiteralPath $archive.FullName -NewName $name
+          $tarball = Join-Path 'dist' $name
+          $hash = (Get-FileHash -LiteralPath $tarball -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -LiteralPath "$tarball.sha256" -Encoding utf8
+          Write-Host "Release package: $name"
+          Write-Host "SHA256: $hash"
+
+      - name: Attach installable package to the published release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $name = "dsh-meeting-$($env:RELEASE_TAG)-win32-x64.tgz"
+          gh release upload $env:RELEASE_TAG "dist/$name" "dist/$name.sha256"
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release upload failed' }

@@ -1,37 +1,24 @@
 # Install dsh-meeting
 
-Requires DSH Desktop **>=0.2.1-rc.3**. Only `0.2.1-rc.3` has been used as the source/build reference; newer versions require their own runtime verification.
+Requires DSH Desktop **>=0.2.1-rc.3** on Windows x64 for WASAPI recording. Only DSH `0.2.1-rc.3` has been used as the source/build reference; newer versions require their own runtime verification.
 
-## Install from GitHub
+## Install the release bundle (Windows x64)
 
-In **DSH Desktop → Plugins → Install**, enter:
+After a GitHub Release is published and its Windows workflow succeeds, copy the **direct download URL** of the `dsh-meeting-vX.Y.Z-win32-x64.tgz` attachment on the [Releases page](https://github.com/Ri0n72Y/dsh-meeting/releases). Paste the URL into **DSH Desktop → Plugins → Install**.
 
-```text
-https://github.com/Ri0n72Y/dsh-meeting
-```
+The tarball contains the prebuilt Host/Client `lib/` and the compiled `native/build/Release/loopback_capture_addon.node`. No local CMake, MSVC or native npm build scripts are required. Restart DSH Desktop after installation. The matching `.sha256` release attachment provides an integrity checksum; publishing and uploading the assets is a separate release job, so do not assume an asset exists until that job succeeds.
 
-This repository root declares `dsh.bundle.patch`, and the **ready-to-load `lib/` directory is committed to Git**. The package no longer runs a `prepare` lifecycle script on installation. Its Host entries are `lib/index.js` (MeetingControl), `lib/context/index.js`, `lib/speaker/index.js`, `lib/capture/index.js`, and its Client lazy-CJS factory is `lib/client/index.js`. The UI can be installed without approving the Meeting package's build scripts. Third-party dependencies may have their own policies and must be assessed separately.
+GitHub URL / Git tag installs behave differently:
 
-For an immutable install, use `github:Ri0n72Y/dsh-meeting#<reviewed-commit-sha>` rather than a moving branch. Restart DSH Desktop after successful installation.
+- `https://github.com/Ri0n72Y/dsh-meeting` installs the default branch's Git tree (currently `main`), **not** the newest GitHub Release.
+- `github:Ri0n72Y/dsh-meeting#vX.Y.Z` installs the tag's Git tree, **not** the tag's Release attachments.
+- Neither Git installation above includes the release-only native `.node`; these modes need an explicit local native build before system-playback recording.
 
-The **official DSH Voice Input Bundle** and its `sensevoice-local` provider remain separate requirements; this project does not distribute the model.
+The official DSH Voice Input Bundle and its `sensevoice-local` provider remain separate requirements; this project does not distribute the model.
 
-## Windows WASAPI native setup
+## Maintainer: manual build from source
 
-**Git installation does not compile a native addon.** This package ships the C++ source but not a Windows `.node` binary. Before using system playback capture on Windows x64, explicitly compile it with Node.js 24, CMake, and MSVC Build Tools.
-
-From an installed Desktop profile, locate the actual package directory:
-
-```powershell
-$plugin = Join-Path $HOME '.dsh\profiles\desktop\node_modules\@ri0n72y\dsh-meeting'
-if (-not (Test-Path (Join-Path $plugin 'package.json'))) { throw "Meeting package not found at: $plugin" }
-Push-Location $plugin
-try { npm run native:build } finally { Pop-Location }
-```
-
-The expected output is `native/build/Release/loopback_capture_addon.node`. The native build needs network access for the pinned CMake FetchContent dependency. If the pnpm-installed package directory is not writable, compile in a Git checkout and install that checkout via the local `link:` path instead. A bundled prebuilt binary will require a separate reviewed release process; no executable is downloaded silently at first use.
-
-For development or local-link installation:
+The Git repository keeps the WASAPI C++ source and ready-to-load JavaScript `lib/`; it does not commit compiled `.node` files. For manual development on Windows x64, use a CMake/MSVC/Windows SDK toolchain:
 
 ```powershell
 git clone https://github.com/Ri0n72Y/dsh-meeting.git
@@ -42,10 +29,12 @@ pnpm run check:prebuilt
 pnpm run native:build
 ```
 
-`lib/` is tracked in Git. When source changes alter generated JavaScript or declarations, commit updated `lib/` files as part of the same PR. The focused CI rebuilds them and checks for differences.
+The local native build needs network access to the pinned Microsoft WIL source. The output is `native/build/Release/loopback_capture_addon.node`. This manual process is **not** part of the end-user release-tarball installation.
+
+`lib/` remains tracked in Git. Any source modification changing generated JS or declarations must commit the matching `lib/`; CI rebuilds it and checks for differences.
 
 ## Acceptance boundary
 
-The root `cordis.patch.yml` activates the context, speaker, capture and MeetingControl Host services via one npm package and a `./client` browser entry. WAV recordings and Markdown outputs remain inside the Session Workspace under `.dsh-meeting/<sha256(sessionId)>/`, never inside DSH_HOME.
+The root `cordis.patch.yml` activates context, speaker, capture and MeetingControl Host services via one package and a `./client` browser entry. WAV and Markdown outputs remain in the Session Workspace under `.dsh-meeting/<sha256(sessionId)>/`, never in DSH_HOME.
 
-A successful Git installation or a green build does not demonstrate native audio capture, SenseVoice or final LLM summary. Record the actual Windows `0.2.1-rc.3` results in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) using the [Windows acceptance guide](windows-acceptance.md).
+A successful Windows native build, N-API import, Git installation or Web Client boot does **not** demonstrate WASAPI recording, SenseVoice transcription or final LLM summary. Record actual Windows results in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) following the [Windows acceptance guide](windows-acceptance.md).
