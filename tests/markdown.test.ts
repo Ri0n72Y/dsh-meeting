@@ -47,6 +47,20 @@ test('speaker changes, pauses and paragraph length yield boundaries, not 5-secon
   assert.doesNotMatch(markdown, /00:00:05|未知说话人|^###/mu)
 })
 
+test('a real silence splits the same speaker; English gets word spaces without spacing CJK', () => {
+  const lines = [
+    { startMs: 0, endMs: 1000, text: 'We discussed', speakerId: null },
+    { startMs: 1000, endMs: 2000, text: 'the topic.', speakerId: null },
+    { startMs: 5000, endMs: 6000, text: '继续讨论', speakerId: null },
+    { startMs: 6000, endMs: 7000, text: '下一个问题。', speakerId: null },
+  ]
+  const paragraphs = transcriptParagraphs(lines)
+  assert.deepEqual(paragraphs.map(x => x.segments), [2, 2])
+  assert.equal(paragraphs[0]?.text, 'We discussed the topic.')
+  assert.equal(paragraphs[1]?.text, '继续讨论下一个问题。')
+  assert.equal(paragraphs[1]?.startMs, 5000)
+})
+
 test('Markdown escapes recognition markup without rewriting raw state or ASR punctuation', () => {
   const snapshot = { sessionId: 'A', phase: 'recording' as const, revision: 0, segments: [
     { startMs: 0, endMs: 1000, text: '# heading?\r\n> quoted\n- list', speakerId: null },
