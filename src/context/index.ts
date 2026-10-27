@@ -5,7 +5,6 @@ import { MeetingStore, sessionDirectoryName, workspaceMeetingRoot } from './stor
 import { SessionWorkspaceCache } from './cache.js'
 export type { MeetingLine, MeetingSnapshot } from './store.js'
 export { MeetingStore, sessionWorkspaceDirectory, workspaceMeetingRoot, sessionDirectoryName } from './store.js'
-export { transcriptParagraphs, transcriptTimestamp } from './transcript.js'
 
 declare module '@deepseek-ai/cordis' {
   interface Context { meetingContext: MeetingContext }

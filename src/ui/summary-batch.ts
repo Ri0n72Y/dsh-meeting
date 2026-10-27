@@ -1,6 +1,6 @@
 /** Durable summary cursors count complete ASR segments, not rendered paragraphs. */
 import type { MeetingLine } from '@ri0n72y/dsh-meeting/context'
-import { transcriptParagraphs, transcriptTimestamp } from '@ri0n72y/dsh-meeting/context'
+import { transcriptParagraphs, transcriptTimestamp } from '../context/transcript.js'
 
 export function summaryCursor(markdown: string): number {
   const match = markdown.match(/<!-- meeting-covered: (\d+) -->/)
