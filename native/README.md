@@ -6,4 +6,4 @@ The root plugin does **not** have an install/prepare hook. During a GitHub Relea
 
 Maintainers can invoke `npm run native:build` at the repository root on Windows x64 with CMake, MSVC Build Tools and the Windows SDK. The build may fetch the pinned Microsoft WIL source. The output is `native/build/Release/loopback_capture_addon.node`.
 
-The release workflow loads the same binary with Node 22 and Node 24, and checks that the npm tarball actually includes it. This verifies the native export and packaging, **not** WASAPI capture on real Windows audio hardware.
+The release workflow loads the binary with Node 22, and checks that the npm tarball actually includes it. This verifies the native export and packaging, **not** WASAPI capture on real Windows audio hardware.

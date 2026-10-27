@@ -4,7 +4,7 @@ This is a **manual release gate**, not part of each PR's focused CI. Run against
 
 First install the **Windows x64 Release `.tgz` asset URL**, not the bare GitHub repository URL. Confirm the release bundle installs and mounts the right Sidebar without Client Loader errors; the bundled `lib/` and prebuilt `native/build/Release/loopback_capture_addon.node` need no install scripts. Then attempt real system audio capture. The native `.node` import smoke on CI is not a substitute for real capture.
 
-When native C++ source, CMake configuration or Node-API target changes, require a **new published Release build** (the release job starts from a clean Windows runner) and Node 22/24 load checks. Verify the installed `.tgz` actually includes that release's binary; do not reuse an old archive. Real DSH plugin registration and system audio remain local Windows acceptance checks.
+When native C++ source, CMake configuration or Node-API target changes, require a **new published Release build** (the release job starts from a clean Windows runner) and Node 22 load checks. Verify the installed `.tgz` actually includes that release's binary; do not reuse an old archive. Real DSH plugin registration and system audio remain local Windows acceptance checks.
 
 For each check, record the date, DSH version, plugin HEAD, observed result, and supporting sanitized log or screenshot in [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) or the release PR. A successful build without this evidence is **not** an acceptance result.
 
