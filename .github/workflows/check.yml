@@ -18,7 +18,11 @@ jobs:
           version: 11.28.5
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
+      - name: Generate Node 22 lockfile for alignment review
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Show lockfile changes (temporary diagnostic)
+        run: git --no-pager diff -- pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - name: Source typecheck without generated dist
         run: pnpm run typecheck
