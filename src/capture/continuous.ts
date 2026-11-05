@@ -26,10 +26,11 @@ export interface CaptureOptions {
   offsetSamples?: number
   /** Maximum simultaneous in-flight + waiting transcription windows. */
   maxQueuedWindows?: number
+  /** Whole seconds per durable PCM/ASR window; defaults to 2 (range 1–10). */
+  windowSeconds?: number
   signal?: AbortSignal
 }
 interface Window { wav: Uint8Array; samples: Float32Array; startMs: number; endMs: number }
-const WINDOW = 5 * SAMPLE_RATE
 const MAX_INPUT = 10 * SAMPLE_RATE
 const MIN_ASR_TAIL = Math.round(0.35 * SAMPLE_RATE)
 const RMS_GATE = 0.008
@@ -60,6 +61,7 @@ export class ContinuousCapture {
   private readonly waiters = new Set<() => void>()
   private readonly receipt: CaptureReceipt = { captured: 0, processed: 0, silent: 0, interrupted: false, errors: [], lines: [] }
   private readonly capacity: number
+  private readonly windowSamples: number
   private fatal = false
   private ended = false
   private readonly upstream?: AbortSignal
@@ -67,8 +69,11 @@ export class ContinuousCapture {
   constructor(private readonly ports: CapturePorts, options: CaptureOptions = {}) {
     this.consumed = options.offsetSamples ?? 0
     this.capacity = options.maxQueuedWindows ?? 4
+    const seconds = options.windowSeconds ?? 2
+    this.windowSamples = seconds * SAMPLE_RATE
     if (!Number.isSafeInteger(this.consumed) || this.consumed < 0
-      || !Number.isSafeInteger(this.capacity) || this.capacity < 1) throw new Error('Invalid capture options')
+      || !Number.isSafeInteger(this.capacity) || this.capacity < 1
+      || !Number.isInteger(seconds) || seconds < 1 || seconds > 10) throw new Error('Invalid capture options')
     this.upstream = options.signal
     if (options.signal?.aborted) this.cancel(options.signal.reason)
     else options.signal?.addEventListener('abort', this.upstreamAbort, { once: true })
@@ -158,13 +163,13 @@ export class ContinuousCapture {
     let cursor = 0
     while (cursor < samples.length) {
       this.signal.throwIfAborted()
-      const count = Math.min(WINDOW - this.pending.length, samples.length - cursor)
+      const count = Math.min(this.windowSamples - this.pending.length, samples.length - cursor)
       const merged = new Float32Array(this.pending.length + count)
       merged.set(this.pending)
       merged.set(samples.subarray(cursor, cursor + count), this.pending.length)
       this.pending = merged
       cursor += count
-      if (this.pending.length === WINDOW) {
+      if (this.pending.length === this.windowSamples) {
         const window = this.pending
         await this.acceptWindow(window)
         this.pending = new Float32Array(0)

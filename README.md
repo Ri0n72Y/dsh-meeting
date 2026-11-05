@@ -13,3 +13,5 @@ The repository root is the DSH bundle. Its compiled Host and Client entry points
 Development: `pnpm install --frozen-lockfile`, `pnpm run typecheck`, `pnpm test`, `pnpm run build`, `pnpm run check:prebuilt`. Source changes that alter runtime output must commit the matching `lib/` files.
 
 See [installation](docs/installation.md), [architecture](docs/architecture.md), [Windows acceptance](docs/windows-acceptance.md) and [Issue #7](https://github.com/Ri0n72Y/dsh-meeting/issues/7) for actual Desktop verification.
+
+Meeting recording uses configurable 2-second ASR windows (`transcriptionWindowSeconds`, valid range 1–10 seconds). After a normal Stop, `meeting.wav.gz` contains the losslessly compressed full recording (decompress before WAV playback); `transcript.srt` maps each ASR window to its audio range. Original WAV windows remain in place for recovery. SenseVoice does not provide precise sentence-level timestamps.

@@ -14,7 +14,7 @@ import { summaryCursor, transcriptBatch } from './summary-batch.js'
 
 declare module '@deepseek-ai/cordis' { interface Context { meetingControl: MeetingControl } }
 
-export interface Config { summaryIntervalMs: number }
+export interface Config { summaryIntervalMs: number; transcriptionWindowSeconds: number }
 interface LiveRecording {
   source: WindowsLoopback
   startedAt: number
@@ -26,7 +26,10 @@ interface LiveRecording {
 
 export default class MeetingControl extends TypertRemoteService {
   static inject = ['meetingContext', 'meetingCapture', 'speechToText', 'sessions', 'typert', 'llm', 'agents']
-  static Config: z<Config> = z.object({ summaryIntervalMs: z.number().min(1_000).default(900_000) })
+  static Config: z<Config> = z.object({
+    summaryIntervalMs: z.number().min(1_000).default(900_000),
+    transcriptionWindowSeconds: z.number().min(1).max(10).default(2),
+  })
   private readonly live = new Map<string, LiveRecording>()
   private readonly summaryJobs = new SummaryJobs((id, final, manual) => this.generate(id, final, manual))
   private starting = false
@@ -101,7 +104,7 @@ export default class MeetingControl extends TypertRemoteService {
     if (this.live.size > 0 || this.starting) throw new Error('System playback audio is already recording in another Session')
     this.starting = true
     try {
-      const capture = await this.ctx.meetingCapture.start(sessionId)
+      const capture = await this.ctx.meetingCapture.start(sessionId, { windowSeconds: this.config.transcriptionWindowSeconds })
       const source = new WindowsLoopback(
         samples => this.ctx.meetingCapture.push(sessionId, samples),
         error => {
