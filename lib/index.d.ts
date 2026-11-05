@@ -24,6 +24,7 @@ declare module '@deepseek-ai/cordis' {
 }
 interface Config {
   summaryIntervalMs: number;
+  transcriptionWindowSeconds: number;
 }
 declare class MeetingControl extends TypertRemoteService {
   private readonly config;

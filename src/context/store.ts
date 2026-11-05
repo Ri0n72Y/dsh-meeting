@@ -2,7 +2,7 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { sessionDirectoryName, secureMeetingDirectory, secureAudioDirectory, verifyMeetingFile } from './workspace.js'
-import { transcriptMarkdown, writeMeetingDocument } from './markdown.js'
+import { transcriptMarkdown, transcriptSrt, writeMeetingDocument } from './markdown.js'
 
 export type MeetingPhase = 'recording' | 'interrupted' | 'stopped'
 export interface SpeakerTurn { readonly startMs: number; readonly endMs: number; readonly speakerId: string | null }
@@ -90,6 +90,7 @@ export class MeetingStore {
         await writeFile(temporary, JSON.stringify(next, null, 2) + '\n', { flag: 'wx' })
         await rename(temporary, path)
         await writeMeetingDocument(dir, 'transcript.md', transcriptMarkdown(next))
+        await writeMeetingDocument(dir, 'transcript.srt', transcriptSrt(next))
       } catch (error) {
         await rm(temporary, { force: true }).catch(() => undefined)
         throw error

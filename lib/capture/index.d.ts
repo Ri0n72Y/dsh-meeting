@@ -29,6 +29,8 @@ interface CaptureOptions {
   offsetSamples?: number;
   /** Maximum simultaneous in-flight + waiting transcription windows. */
   maxQueuedWindows?: number;
+  /** Whole seconds per durable PCM/ASR window; defaults to 2 (range 1–10). */
+  windowSeconds?: number;
   signal?: AbortSignal;
 }
 /** Await push() for durable ingestion. Recognition runs in a bounded independent lane. */
@@ -46,6 +48,7 @@ declare class ContinuousCapture {
   private readonly waiters;
   private readonly receipt;
   private readonly capacity;
+  private readonly windowSamples;
   private fatal;
   private ended;
   private readonly upstream?;
@@ -74,6 +77,12 @@ declare function audioCheckpoint(dir: string): Promise<{
   offsetSamples: number;
 }>;
 declare function saveAudioWindow(dir: string, index: number, wav: Uint8Array, signal: AbortSignal): Promise<void>;
+/**
+ * Archive complete 16 kHz mono PCM16 WAV windows without altering their timeline.
+ * The compressed WAV is lossless; silence remains present so SRT cue offsets match.
+ * Source windows remain available for recovery if compression or publication fails.
+ */
+declare function archiveMeetingAudio(audioDir: string): Promise<string | null>;
 interface NativeLoopback {
   startSystemAudio(onChunk: (pcm48kStereo: Buffer | number | null) => void): void;
   stop(): void;
@@ -127,9 +136,9 @@ declare class MeetingCapture extends Service {
   constructor(ctx: Context);
   disposeSession(id: string): Promise<void>;
   registerSourceCloser(id: string, closer: () => Promise<void>): () => void;
-  start(sessionId: string, options?: Pick<CaptureOptions, 'signal'>): Promise<ContinuousCapture>;
+  start(sessionId: string, options?: Pick<CaptureOptions, 'signal' | 'windowSeconds'>): Promise<ContinuousCapture>;
   /** Await each push for durable audio ingestion and built-in ASR backpressure. */
   push(sessionId: string, samples: Float32Array): Promise<void>;
   stop(sessionId: string): Promise<CaptureReceipt>;
 }
-export { type CaptureOptions, type CapturePorts, type CaptureReceipt, type CapturedLine, ContinuousCapture, SAMPLE_RATE, type SpeakerTurn, WindowsLoopback, audioCheckpoint, decodeWav, MeetingCapture as default, downmix48k, encodeWav, saveAudioWindow };
+export { type CaptureOptions, type CapturePorts, type CaptureReceipt, type CapturedLine, ContinuousCapture, SAMPLE_RATE, type SpeakerTurn, WindowsLoopback, archiveMeetingAudio, audioCheckpoint, decodeWav, MeetingCapture as default, downmix48k, encodeWav, saveAudioWindow };

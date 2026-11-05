@@ -11,11 +11,13 @@ import { SessionCaptureRegistry } from './lifecycle.js'
 import { ContinuousCapture, type CaptureReceipt, type CaptureOptions } from './continuous.js'
 import { decodeWav, SAMPLE_RATE } from './wav.js'
 import { audioCheckpoint, saveAudioWindow } from './audio-files.js'
+import { archiveMeetingAudio } from './archive.js'
 
 export { ContinuousCapture } from './continuous.js'
 export type { CapturedLine, CaptureReceipt, CapturePorts, SpeakerTurn, CaptureOptions } from './continuous.js'
 export { decodeWav, encodeWav, SAMPLE_RATE } from './wav.js'
 export { audioCheckpoint, saveAudioWindow } from './audio-files.js'
+export { archiveMeetingAudio } from './archive.js'
 export { WindowsLoopback, downmix48k } from './windows-loopback.js'
 
 declare module '@deepseek-ai/cordis' {
@@ -89,7 +91,11 @@ export default class MeetingCapture extends Service {
     return () => { if (this.sourceClosers.get(id) === closer) this.sourceClosers.delete(id) }
   }
 
-  async start(sessionId: string, options: Pick<CaptureOptions, 'signal'> = {}): Promise<ContinuousCapture> {
+  async start(sessionId: string, options: Pick<CaptureOptions, 'signal' | 'windowSeconds'> = {}): Promise<ContinuousCapture> {
+    if (options.windowSeconds !== undefined && (!Number.isInteger(options.windowSeconds)
+      || options.windowSeconds < 1 || options.windowSeconds > 10)) {
+      throw new Error('Invalid capture window: expected 1–10 whole seconds')
+    }
     if (this.active.has(sessionId) || this.starting.has(sessionId)) {
       throw new Error('Session capture already active or starting')
     }
@@ -150,7 +156,7 @@ export default class MeetingCapture extends Service {
           await store.append(sessionId, line)
           return line
         },
-      }, { offsetSamples: checkpoint.offsetSamples, signal: options.signal })
+      }, { offsetSamples: checkpoint.offsetSamples, signal: options.signal, windowSeconds: options.windowSeconds })
       if (this.ctx.sessions.get(sessionId as SessionId) !== owner) {
         capture.cancel(new Error('Session disposed during capture start'))
         await store.interrupt(sessionId, 'Session disposed during capture start')
@@ -159,8 +165,18 @@ export default class MeetingCapture extends Service {
       this.active.add(sessionId, {
         capture,
         async settle(receipt) {
-          if (receipt.interrupted) await store.interrupt(sessionId, receipt.errors.at(-1) ?? 'Capture cancelled or interrupted')
-          else await store.finish(sessionId)
+          if (receipt.interrupted) {
+            await store.interrupt(sessionId, receipt.errors.at(-1) ?? 'Capture cancelled or interrupted')
+            return
+          }
+          try {
+            // Only a complete recording is archived. Failed encoding keeps the original WAV windows.
+            await archiveMeetingAudio(dir)
+            await store.finish(sessionId)
+          } catch (error) {
+            await store.interrupt(sessionId, 'Audio archive failed: ' + String(error))
+            throw error
+          }
         },
         release: () => this.ctx.get('meetingSpeaker')?.forget(sessionId),
       })

@@ -4,10 +4,35 @@ import { ContinuousCapture } from '../src/capture/continuous.js'
 import { SAMPLE_RATE, decodeWav } from '../src/capture/wav.js'
 
 const voiced = (seconds: number): Float32Array => new Float32Array(SAMPLE_RATE * seconds).fill(0.2)
+const captureFiveSeconds = (
+  ports: ConstructorParameters<typeof ContinuousCapture>[0],
+  options: ConstructorParameters<typeof ContinuousCapture>[1] = {},
+): ContinuousCapture => new ContinuousCapture(ports, { ...options, windowSeconds: 5 })
+
+test('default 2s and configured 3s windows maintain absolute offsets', async () => {
+  for (const [seconds, expected] of [
+    [2, [[0, 2000], [2000, 4000], [4000, 5000]]],
+    [3, [[0, 3000], [3000, 5000]]],
+  ] as const) {
+    const times: Array<[number, number]> = []
+    const capture = new ContinuousCapture({
+      async persist(_wav, start, end) { times.push([start, end]) },
+      async process(_wav, _samples, start, end) {
+        return { startMs: start, endMs: end, text: 'speech', speakerId: null }
+      },
+    }, { windowSeconds: seconds, offsetSamples: SAMPLE_RATE * 7 })
+    await capture.push(voiced(5))
+    const result = await capture.stop()
+    assert.deepEqual(times, expected.map(([start, end]) => [start + 7000, end + 7000]))
+    assert.equal(result.captured, expected.length)
+    assert.equal(result.lines.length, expected.length)
+  }
+})
+
 
 test('continuous PCM produces timed transcripts, silent windows and entire final tail', async () => {
   const saved: Array<{ start: number; end: number; frames: number }> = []
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist(wav, start, end) { saved.push({ start, end, frames: decodeWav(wav).length }) },
     async process(_wav, _samples, start, end) {
       return { startMs: start, endMs: end, speakerId: null, text: 'recognized segment' }
@@ -29,7 +54,7 @@ test('continuous PCM produces timed transcripts, silent windows and entire final
 
 test('final 100ms alone is persisted even when too short for ASR', async () => {
   const saved: number[] = []
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist(wav) { saved.push(decodeWav(wav).length) },
     async process() { throw new Error('short tail must not be transcribed') },
   })
@@ -44,7 +69,7 @@ test('final 100ms alone is persisted even when too short for ASR', async () => {
 test('failed ASR preserves audio and subsequent windows', async () => {
   let count = 0
   let persisted = 0
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist() { persisted++ },
     async process(_wav, _pcm, startMs, endMs) {
       if (count++ === 0) throw new Error('temporary recognition failure')
@@ -61,7 +86,7 @@ test('failed ASR preserves audio and subsequent windows', async () => {
 
 test('persist failure interrupts instead of poisoning all later windows', async () => {
   let calls = 0
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist() { calls++; throw new Error('disk full') },
     async process() { throw new Error('must not recognize unsaved audio') },
   })
@@ -78,7 +103,7 @@ test('slow ASR applies producer backpressure, not an unbounded audio backlog', a
   let release!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
   let persisted = 0
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist() { persisted++ },
     async process(_wav, _samples, startMs, endMs) {
       if (startMs === 0) await gate
@@ -100,7 +125,7 @@ test('upstream cancellation reaches in-flight recognition and returns interrupte
   const controller = new AbortController()
   let entered!: () => void
   const inside = new Promise<void>(resolve => { entered = resolve })
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist() {},
     async process(_wav, _samples, _start, _end, signal) {
       entered()
@@ -123,7 +148,7 @@ test('short quiet utterance within five-second window reaches ASR', async () => 
   const recording = new Float32Array(SAMPLE_RATE * 5)
   // 300ms phrase at amplitude .03 has whole-window RMS ~.00735 (< .008).
   recording.fill(0.03, SAMPLE_RATE, SAMPLE_RATE + 4800)
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist() {},
     async process() { processed++; return null },
   })
@@ -141,7 +166,7 @@ test('cancelled capture persists varied buffered tails and counts true silence',
     [SAMPLE_RATE, 0, 1],
   ]) {
     const saved: number[] = []
-    const capture = new ContinuousCapture({
+    const capture = captureFiveSeconds({
       async persist(wav, _start, _end, signal) { signal.throwIfAborted(); saved.push(decodeWav(wav).length) },
       async process() { throw new Error('Cancelled tail must not start ASR') },
     })
@@ -160,7 +185,7 @@ test('cancel while queued behind slow ASR flushes a complete waiting PCM window'
   const stored: number[] = []
   let entered!: () => void
   const enteredPromise = new Promise<void>(resolve => { entered = resolve })
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist(wav, _from, _to, signal) { signal.throwIfAborted(); stored.push(decodeWav(wav).length) },
     async process(_wav, _samples, _start, _end, signal) {
       entered()
@@ -190,7 +215,7 @@ test('PCM windowing is invariant under arbitrary producer chunk boundaries', asy
   const run = async (pieces: number[]) => {
     const persisted: Array<{ from: number; to: number; bytes: Buffer }> = []
     const transcribed: Array<[number, number]> = []
-    const capture = new ContinuousCapture({
+    const capture = captureFiveSeconds({
       async persist(wav, from, to) { persisted.push({ from, to, bytes: Buffer.from(wav) }) },
       async process(_wav, _pcm, from, to) { transcribed.push([from, to]); return null },
     })
@@ -214,10 +239,10 @@ test('PCM windowing is invariant under arbitrary producer chunk boundaries', asy
 
 test('invalid ingestion and options fail at the public capture boundary', async () => {
   const ports = { async persist() {}, async process() { return null } }
-  for (const opts of [{ offsetSamples: -1 }, { offsetSamples: 1.5 }, { maxQueuedWindows: 0 }]) {
+  for (const opts of [{ offsetSamples: -1 }, { offsetSamples: 1.5 }, { maxQueuedWindows: 0 }, { windowSeconds: 0 }, { windowSeconds: 11 }, { windowSeconds: 1.5 }]) {
     assert.throws(() => new ContinuousCapture(ports, opts), /Invalid capture options/)
   }
-  const c = new ContinuousCapture(ports)
+  const c = captureFiveSeconds(ports)
   await assert.rejects(c.push(new Float32Array(SAMPLE_RATE * 10 + 1)), /Invalid PCM frame/)
   await assert.rejects(c.push(Float32Array.of(Number.NaN)), /Invalid PCM frame/)
   await assert.rejects(c.push(Float32Array.of(Number.POSITIVE_INFINITY)), /Invalid PCM frame/)
@@ -231,7 +256,7 @@ test('cancellation during in-flight disk persistence does not abort an accepted 
   const started = new Promise<void>(resolve => { entered = resolve })
   const gate = new Promise<void>(resolve => { release = resolve })
   const saved: number[] = []
-  const capture = new ContinuousCapture({
+  const capture = captureFiveSeconds({
     async persist(wav, _start, _end, signal) {
       signal.throwIfAborted()
       entered()

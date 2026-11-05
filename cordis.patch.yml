@@ -12,3 +12,4 @@
       name: '@ri0n72y/dsh-meeting'
       config:
         summaryIntervalMs: 900000
+        transcriptionWindowSeconds: 2

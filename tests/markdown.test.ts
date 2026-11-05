@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MeetingStore } from '../src/context/store.js'
-import { transcriptMarkdown } from '../src/context/markdown.js'
+import { transcriptMarkdown, transcriptSrt } from '../src/context/markdown.js'
 import { transcriptParagraphs } from '../src/context/transcript.js'
 
 test('live Session writes a readable projection; original 5-second segments stay intact', async () => {
@@ -17,6 +17,9 @@ test('live Session writes a readable projection; original 5-second segments stay
     const text = await store.readDocument('foo', 'transcript.md')
     assert.equal(text, '# 会议原文\n\n**00:00:06**  你好，欢迎参加会议今天讨论进度。\n\n')
     assert.doesNotMatch(text, /未知说话人|^###/mu)
+    const cues = await readFile(join(store.directory('foo'), 'transcript.srt'), 'utf8')
+    assert.match(cues, /00:00:06,000 --> 00:00:11,000/)
+    assert.match(cues, /00:00:11,000 --> 00:00:16,000/)
     const raw = await store.read('foo')
     assert.equal(raw?.segments.length, 2)
     assert.equal(raw?.segments[0]?.text, '你好，欢迎参加会议')
@@ -87,4 +90,15 @@ test('long continuous speech splits into readable paragraphs without losing segm
   assert.ok(paragraphs.length < segments.length)
   assert.equal(paragraphs.reduce((n, x) => n + x.segments, 0), segments.length)
   for (const line of segments) assert.ok(paragraphs.some(p => p.text.includes(line.text)))
+})
+
+test('subtitle cues use original window timestamps, not invented sentence times', () => {
+  const state = { sessionId: 'S', phase: 'stopped' as const, revision: 1, segments: [
+    { startMs: 1234, endMs: 2456, text: '第一句。第二句。', speakerId: null },
+    { startMs: 2456, endMs: 4000, text: '继续发言。', speakerId: 'Speaker 1' },
+  ] }
+  assert.equal(transcriptSrt(state), [
+    '1', '00:00:01,234 --> 00:00:02,456', '第一句。第二句。', '',
+    '2', '00:00:02,456 --> 00:00:04,000', 'Speaker 1: 继续发言。', '',
+  ].join('\n'))
 })
