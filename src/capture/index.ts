@@ -169,13 +169,12 @@ export default class MeetingCapture extends Service {
             await store.interrupt(sessionId, receipt.errors.at(-1) ?? 'Capture cancelled or interrupted')
             return
           }
+          // Audio is already durable: an optional archive error must not block Stop or final summary.
+          await store.finish(sessionId)
           try {
-            // Only a complete recording is archived. Failed encoding keeps the original WAV windows.
             await archiveMeetingAudio(dir)
-            await store.finish(sessionId)
           } catch (error) {
-            await store.interrupt(sessionId, 'Audio archive failed: ' + String(error))
-            throw error
+            receipt.errors.push('Audio archive failed: ' + String(error))
           }
         },
         release: () => this.ctx.get('meetingSpeaker')?.forget(sessionId),
