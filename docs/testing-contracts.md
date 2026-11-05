@@ -24,7 +24,7 @@ A single reported WASAPI frame-position gap exceeding ten minutes is treated as 
 ## Verification placement
 
 - **Focused CI** on non-documentation pushes to repository branches: one typecheck, focused contract tests, one build. Tests use public unit/port APIs rather than fabricated Host internals.
-- **Local Windows build check** whenever the native addon source, build configuration or Node ABI target changes: clean the previous native output, compile from source using Node 24, and load the new N-API binary. A cached `.node` file does not count.
+- **Local Windows build check** whenever the native addon source, build configuration or Node ABI target changes: clean the previous native output, compile from source using Node 22, and load the new N-API binary. A cached `.node` file does not count.
 - **Manual DSH deployment** when registration, manifests or Host/client interfaces change: install into the real DSH environment and verify the plugin loads and its entry points register. Web-only registration is not evidence of a working Desktop meeting.
 - **Issue #7 release acceptance** in real Windows DSH Desktop: Sidebar Start/Stop, playback capture, SenseVoice, Session-scoped WAV/transcript, Session switching, stream updates and LLM final summary. Use [Windows acceptance](windows-acceptance.md) and retain evidence before release.
 
