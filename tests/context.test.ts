@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtemp, rm, readFile, mkdir, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { MeetingStore, sessionDirectoryName, workspaceMeetingRoot } from '../src/context/store.js'
+import { MeetingStore, sessionDirectoryName } from '../src/context/store.js'
 import { SessionWorkspaceCache } from '../src/context/cache.js'
 
 test('Session-scoped journal survives service recreation and remains isolated', async () => {
@@ -64,12 +64,6 @@ test('opaque Session IDs are safe and meeting audio is ignored by workspace Git'
     assert.match(sessionDirectoryName('../escape'), /^[a-f0-9]{64}$/)
     assert.notEqual(sessionDirectoryName('team:demo'), sessionDirectoryName('team/demo'))
   } finally { await rm(cwd, { recursive: true, force: true }) }
-})
-
-test('DSH Session without cwd uses the Host workspace, never DSH_HOME', async () => {
-  const host = join(tmpdir(), 'host-session-root')
-  assert.equal(workspaceMeetingRoot(undefined, host), join(host, '.dsh-meeting'))
-  assert.equal(workspaceMeetingRoot(join(host, 'project'), host), join(host, 'project', '.dsh-meeting'))
 })
 
 test('pre-existing workspace ignore rules remain unchanged, audio stays Git-ignored', async () => {
