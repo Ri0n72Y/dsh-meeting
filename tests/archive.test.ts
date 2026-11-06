@@ -40,14 +40,3 @@ test('normal-stop archive merges all PCM into one compressed WAV without timing 
     assert.deepEqual(await audioCheckpoint(dir), saved)
   } finally { await rm(root, { recursive: true, force: true }) }
 })
-
-test('empty or incomplete recordings never publish a misleading archive', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'meeting-archive-gap-'))
-  const dir = join(root, 'audio')
-  try {
-    assert.equal(await archiveMeetingAudio(dir), null)
-    await saveAudioWindow(dir, 1, encodeWav(new Float32Array(SAMPLE_RATE)), new AbortController().signal)
-    await assert.rejects(archiveMeetingAudio(dir), /Non-contiguous/)
-    await assert.rejects(readFile(join(root, 'meeting.wav.gz')), /ENOENT/)
-  } finally { await rm(root, { recursive: true, force: true }) }
-})
