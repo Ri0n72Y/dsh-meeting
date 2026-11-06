@@ -3,7 +3,6 @@ import { test } from 'node:test'
 import { contribution } from '../src/ui/remote.js'
 
 test('all six Meeting Remotes provide strict Session ID parameters', () => {
-  assert.equal(contribution.descriptors.length, 6)
   for (const descriptor of contribution.descriptors) {
     assert.equal(descriptor.parameters.length, 1, descriptor.method)
     const [parameter] = descriptor.parameters

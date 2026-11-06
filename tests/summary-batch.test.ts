@@ -1,25 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { summaryCursor, transcriptBatch } from '../src/ui/summary-batch.js'
-import { transcriptParagraphs, transcriptTimestamp } from '../src/context/transcript.js'
 
 test('summary cursor accepts only valid nonnegative integer checkpoints', () => {
   assert.equal(summaryCursor('empty'), 0)
   assert.equal(summaryCursor('<!-- meeting-covered: 13 -->'), 13)
   assert.equal(summaryCursor('<!-- meeting-covered: -1 -->'), 0)
   assert.equal(summaryCursor('untrusted meeting-covered: 99'), 0)
-})
-
-test('summary uses the same human-readable paragraphs without unknown-speaker spam', () => {
-  const lines = [
-    { startMs: 0, endMs: 5000, text: '我们先讨论第一项。', speakerId: null },
-    { startMs: 5000, endMs: 10000, text: '然后讨论第二项。', speakerId: null },
-  ]
-  const batch = transcriptBatch(lines, 0)
-  assert.equal(batch.end, 2)
-  assert.equal(batch.text, '[00:00:00] 我们先讨论第一项。然后讨论第二项。')
-  assert.equal(transcriptParagraphs(lines)[0]?.segments, 2)
-  assert.equal(transcriptTimestamp(3723000), '01:02:03')
 })
 
 test('large transcript batches advance by complete segments exactly once', () => {

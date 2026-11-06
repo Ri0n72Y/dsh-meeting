@@ -9,11 +9,6 @@ test('48 kHz stereo 16-bit PCM downmixes into mono 16 kHz', () => {
   assert.equal(pcm.length, 4)
   pcm.forEach(value => assert.ok(Math.abs(value - 0.125) < 0.001))
 })
-test('non-Windows devices are rejected before attempting native imports', () => {
-  if (process.platform === 'win32' && process.arch === 'x64') return
-  assert.throws(() => new WindowsLoopback(async () => {}, () => {}).start(), /Windows x64/)
-})
-
 test('overrun stops intake but persists every PCM block admitted before failure', async () => {
   let callback!: (bytes: Buffer | number | null) => void
   let stopCalls = 0

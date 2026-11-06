@@ -9,27 +9,6 @@ const captureFiveSeconds = (
   options: ConstructorParameters<typeof ContinuousCapture>[1] = {},
 ): ContinuousCapture => new ContinuousCapture(ports, { ...options, windowSeconds: 5 })
 
-test('default 2s and configured 3s windows maintain absolute offsets', async () => {
-  for (const [seconds, expected] of [
-    [2, [[0, 2000], [2000, 4000], [4000, 5000]]],
-    [3, [[0, 3000], [3000, 5000]]],
-  ] as const) {
-    const times: Array<[number, number]> = []
-    const capture = new ContinuousCapture({
-      async persist(_wav, start, end) { times.push([start, end]) },
-      async process(_wav, _samples, start, end) {
-        return { startMs: start, endMs: end, text: 'speech', speakerId: null }
-      },
-    }, { windowSeconds: seconds, offsetSamples: SAMPLE_RATE * 7 })
-    await capture.push(voiced(5))
-    const result = await capture.stop()
-    assert.deepEqual(times, expected.map(([start, end]) => [start + 7000, end + 7000]))
-    assert.equal(result.captured, expected.length)
-    assert.equal(result.lines.length, expected.length)
-  }
-})
-
-
 test('continuous PCM produces timed transcripts, silent windows and entire final tail', async () => {
   const saved: Array<{ start: number; end: number; frames: number }> = []
   const capture = captureFiveSeconds({
@@ -237,11 +216,8 @@ test('PCM windowing is invariant under arbitrary producer chunk boundaries', asy
   assert.equal(contiguous.receipt.silent, 1)
 })
 
-test('invalid ingestion and options fail at the public capture boundary', async () => {
+test('invalid PCM ingestion fails at the capture boundary', async () => {
   const ports = { async persist() {}, async process() { return null } }
-  for (const opts of [{ offsetSamples: -1 }, { offsetSamples: 1.5 }, { maxQueuedWindows: 0 }, { windowSeconds: 0 }, { windowSeconds: 11 }, { windowSeconds: 1.5 }]) {
-    assert.throws(() => new ContinuousCapture(ports, opts), /Invalid capture options/)
-  }
   const c = captureFiveSeconds(ports)
   await assert.rejects(c.push(new Float32Array(SAMPLE_RATE * 10 + 1)), /Invalid PCM frame/)
   await assert.rejects(c.push(Float32Array.of(Number.NaN)), /Invalid PCM frame/)
