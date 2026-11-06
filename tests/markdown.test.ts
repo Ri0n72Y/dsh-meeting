@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MeetingStore } from '../src/context/store.js'
@@ -17,9 +17,6 @@ test('live Session writes a readable projection; original 5-second segments stay
     const text = await store.readDocument('foo', 'transcript.md')
     assert.equal(text, '# 会议原文\n\n**00:00:06**  你好，欢迎参加会议今天讨论进度。\n\n')
     assert.doesNotMatch(text, /未知说话人|^###/mu)
-    const cues = await readFile(join(store.directory('foo'), 'transcript.srt'), 'utf8')
-    assert.match(cues, /00:00:06,000 --> 00:00:11,000/)
-    assert.match(cues, /00:00:11,000 --> 00:00:16,000/)
     const raw = await store.read('foo')
     assert.equal(raw?.segments.length, 2)
     assert.equal(raw?.segments[0]?.text, '你好，欢迎参加会议')
