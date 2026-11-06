@@ -6,8 +6,8 @@ const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url
 assert.equal(pkg.name, '@ri0n72y/dsh-meeting')
 assert.equal(pkg.dsh.bundle.patch, './cordis.patch.yml')
 assert.equal(pkg.dsh.client.platform, 'web')
-assert.equal(pkg.engines.dsh, '>=0.2.1-rc.3')
-assert.equal(pkg.engines.node, '^22.19.0')
+assert.equal(pkg.engines.dsh, '>=0.2.2-rc.1')
+assert.equal(pkg.engines.node, '>=24.9.0')
 for (const script of ['prepare', 'prepack', 'install', 'postinstall']) {
   assert.equal(pkg.scripts?.[script], undefined, 'script-free Git installation must not execute ' + script)
 }

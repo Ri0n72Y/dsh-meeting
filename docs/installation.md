@@ -1,6 +1,6 @@
 # Install dsh-meeting
 
-Requires DSH Desktop **>=0.2.1-rc.3** on Windows x64 for WASAPI recording. Only DSH `0.2.1-rc.3` has been used as the source/build reference; newer versions require their own runtime verification.
+Requires DSH Desktop **>=0.2.2-rc.1** on Windows x64 for WASAPI recording. DSH `0.2.2-rc.1` requires Node.js `>=24.9.0`. Source/build checks target rc.1; actual Windows Desktop activation still needs runtime verification.
 
 ## Install the release bundle (Windows x64)
 
