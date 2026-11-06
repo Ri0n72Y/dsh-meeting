@@ -1,4 +1,4 @@
-/** DSH >=0.2.1-rc.3 loads Client plugins as classic-script lazy-CJS factories.
+/** DSH >=0.2.2-rc.1 loads Client plugins as classic-script lazy-CJS factories.
  * Keep React and DSH UI primitives on the shared browser module table. */
 import { defineConfig } from 'tsdown'
 import { readFile } from 'node:fs/promises'
