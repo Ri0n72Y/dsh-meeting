@@ -1,12 +1,12 @@
 # Test contracts and verification boundaries
 
-The test suite protects independently observable production contracts, not a fixed test count or the implementation's internal call order. This note records the current ownership decisions for PR #8; it is not a testing framework.
+The test suite protects independently observable production contracts, not fixed configuration values, a test count, or incidental implementation details. This note records current dependency-risk boundaries; it is not a testing framework.
 
 | Owner | Contract and discriminating counterexample | Routine protection |
 | --- | --- | --- |
 | `wav.ts` | Canonical PCM16 round-trip and header rejection; wrong rate, truncated WAV or quantization boundary cannot pass | `wav.test.ts` |
 | `audio-files.ts` | Resume uses durable sample counts, rejects gaps/corruption, never replaces an existing index; repeated index must fail without altering the original | `audio-files.test.ts` |
-| `ContinuousCapture` | Configurable 2-second default windowing; producer chunking does not alter persisted windows; stop preserves accepted tail; failure/cancel do not lose accepted PCM; slow ASR bounds intake | `capture.test.ts` |
+| `ContinuousCapture` | Producer chunking does not alter persisted audio; stop preserves accepted tail; failure/cancel do not lose accepted PCM; slow ASR bounds intake | `capture.test.ts` |
 | `archiveMeetingAudio` | Streaming lossless gzip of contiguous WAV windows; preserves samples and silence; missing sequence rejects | `archive.test.ts` |
 | `MeetingStore` / Workspace | Invalid lines, nonmonotonic times, stopped Session, and path escapes fail without mutating committed state; session data remains isolated | `context.test.ts` |
 | `SessionCaptureRegistry` | Concurrent stop/dispose settles once and releases the lease even when settlement fails | `lifecycle.test.ts` |
