@@ -8,6 +8,8 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+permissions:
+  contents: write
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -24,5 +26,15 @@ jobs:
         run: pnpm run typecheck
       - run: pnpm test
       - run: pnpm run build
+      - name: Synchronize built lib for summary-fix branch
+        if: github.ref == 'refs/heads/fix/meeting-summary-defer'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/
+          if ! git diff --cached --quiet; then
+            git commit -m 'build: update Meeting Host bundle after summary fix'
+            git push origin HEAD:fix/meeting-summary-defer
+          fi
       - name: Verify committed lib matches source
         run: pnpm run check:prebuilt
