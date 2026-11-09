@@ -15,6 +15,8 @@ import { summaryCursor, transcriptBatch } from './summary-batch.js'
 declare module '@deepseek-ai/cordis' { interface Context { meetingControl: MeetingControl } }
 
 export interface Config { summaryIntervalMs: number; transcriptionWindowSeconds: number }
+interface DeferredSummary { timer: ReturnType<typeof setInterval>; final: boolean; manual: boolean; running: boolean }
+
 interface LiveRecording {
   source: WindowsLoopback
   startedAt: number
@@ -33,7 +35,7 @@ export default class MeetingControl extends TypertRemoteService {
   private readonly live = new Map<string, LiveRecording>()
   private readonly summaryJobs = new SummaryJobs((id, final, manual) => this.generate(id, final, manual))
   private starting = false
-  private readonly deferredTimers = new Map<string, ReturnType<typeof setInterval>>()
+  private readonly deferredTimers = new Map<string, DeferredSummary>()
   private readonly state = new Map<string, { updatedAt?: number; nextAt?: number; error?: string; captureError?: string; deferred?: boolean; busy?: boolean }>()
 
   constructor(ctx: Context, private readonly config: Config) {
@@ -56,6 +58,10 @@ export default class MeetingControl extends TypertRemoteService {
       invocations: contribution.descriptors,
     }), 'meeting-control Host Gateway invocations')
     ctx.on('session/disposed', session => this.clearDeferredTimer(session.header.id))
+    // Official DSH Agent status event: retry a deferred summary as soon as its Agent becomes idle.
+    ctx.on('agent/status', ({ agent, status }) => {
+      if (status === 'idle') this.retryDeferredSummary(agent.id)
+    })
     ctx.effect(() => async () => {
       for (const id of this.deferredTimers.keys()) this.clearDeferredTimer(id)
       await Promise.allSettled([...this.live.keys()].map(id => this.close(id)))
@@ -187,8 +193,14 @@ export default class MeetingControl extends TypertRemoteService {
   async stop(sessionId: string): Promise<MeetingView> {
     if (!this.live.has(sessionId)) throw new Error('Meeting is not recording')
     await this.close(sessionId)
-    await this.summaryJobs.run(sessionId, true)
-    if (this.state.get(sessionId)?.deferred) this.deferSummary(sessionId, true)
+    // Final summarization can be slow or deferred by an active Agent. Device Stop
+    // and its UI response must not wait for a model call.
+    void this.summaryJobs.run(sessionId, true).then(() => {
+      if (this.state.get(sessionId)?.deferred) this.deferSummary(sessionId, true)
+    }).catch(error => {
+      this.state.set(sessionId, { ...this.state.get(sessionId), busy: false, deferred: false, error: String(error) })
+      this.ctx.logger('meeting-control').warn('Final meeting summary: ' + String(error))
+    })
     return this.snapshot(sessionId)
   }
 
@@ -202,39 +214,56 @@ export default class MeetingControl extends TypertRemoteService {
 
   async summarize(sessionId: string): Promise<MeetingView> {
     await this.summaryJobs.run(sessionId, false, true)
-    if (!this.live.has(sessionId) && this.state.get(sessionId)?.deferred) {
-      this.deferSummary(sessionId, false, true)
-    }
+    if (this.state.get(sessionId)?.deferred) this.deferSummary(sessionId, false, true)
     return this.snapshot(sessionId)
   }
 
   private clearDeferredTimer(id: string): void {
-    const timer = this.deferredTimers.get(id)
-    if (timer) clearInterval(timer)
+    const pending = this.deferredTimers.get(id)
+    if (pending) clearInterval(pending.timer)
     this.deferredTimers.delete(id)
   }
-  /** Retry only Agent-busy deferrals; paid model failures require manual retry. */
+
+  /** Record the strongest deferred request: final always supersedes checkpoint. */
   private deferSummary(id: string, final: boolean, manual = false): void {
-    if (this.deferredTimers.has(id)) return
-    const timer = setInterval(() => {
-      if (!this.ctx.sessions.get(id as SessionId) || !this.state.get(id)?.deferred) {
-        this.clearDeferredTimer(id)
-        return
-      }
-      void this.summaryJobs.run(id, final, manual).then(() => {
-        if (!this.state.get(id)?.deferred) this.clearDeferredTimer(id)
-      }).catch(error => {
-        this.state.set(id, { ...this.state.get(id), error: String(error), deferred: false })
-        this.clearDeferredTimer(id)
-      })
-    }, 10_000)
-    this.deferredTimers.set(id, timer)
+    const existing = this.deferredTimers.get(id)
+    if (existing) {
+      existing.final ||= final
+      existing.manual ||= manual
+      return
+    }
+    const pending: DeferredSummary = {
+      final, manual, running: false,
+      timer: setInterval(() => this.retryDeferredSummary(id), 10_000),
+    }
+    this.deferredTimers.set(id, pending)
+    // The Agent may have become idle between generate() and timer registration.
+    if (this.ctx.agents.get(id as SessionId)?.status !== 'running') this.retryDeferredSummary(id)
   }
+
+  private retryDeferredSummary(id: string): void {
+    const pending = this.deferredTimers.get(id)
+    if (!pending || pending.running) return
+    if (!this.ctx.sessions.get(id as SessionId) || !this.state.get(id)?.deferred) {
+      this.clearDeferredTimer(id)
+      return
+    }
+    // Never interrupt a running Agent; the timer also handles missed status events.
+    if (this.ctx.agents.get(id as SessionId)?.status === 'running') return
+    pending.running = true
+    void this.summaryJobs.run(id, pending.final, pending.manual).then(() => {
+      if (!this.state.get(id)?.deferred) this.clearDeferredTimer(id)
+    }).catch(error => {
+      this.state.set(id, { ...this.state.get(id), busy: false, deferred: false, error: String(error) })
+      this.clearDeferredTimer(id)
+    }).finally(() => { pending.running = false })
+  }
+
   private async tick(sessionId: string): Promise<void> {
     const state = this.state.get(sessionId)
-    if (!this.live.has(sessionId) || !state) return
-    if (!state.deferred && Date.now() < (state.nextAt ?? 0)) return
+    if (!this.live.has(sessionId) || !state || state.deferred || Date.now() < (state.nextAt ?? 0)) return
     await this.summaryJobs.run(sessionId, false)
+    if (this.state.get(sessionId)?.deferred) this.deferSummary(sessionId, false)
   }
 
   private async generate(sessionId: string, final: boolean, manual: boolean): Promise<void> {
@@ -243,8 +272,7 @@ export default class MeetingControl extends TypertRemoteService {
     // A meeting may start before the first chat turn creates its Agent.
     // Busy Agents defer summarization; absent Agents use DSH's selected default model.
     if (agent !== undefined && agent.status !== 'idle') {
-      this.state.set(sessionId, { ...before, deferred: true,
-        error: 'Session Agent 正忙，已延后总结' })
+      this.state.set(sessionId, { ...before, busy: false, deferred: true, error: undefined })
       return
     }
     const session = this.ctx.sessions.get(sessionId as SessionId)
