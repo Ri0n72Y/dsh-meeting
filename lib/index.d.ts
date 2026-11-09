@@ -44,8 +44,9 @@ declare class MeetingControl extends TypertRemoteService {
   prepare(sessionId: string): Promise<MeetingView>;
   summarize(sessionId: string): Promise<MeetingView>;
   private clearDeferredTimer;
-  /** Retry only Agent-busy deferrals; paid model failures require manual retry. */
+  /** Record the strongest deferred request: final always supersedes checkpoint. */
   private deferSummary;
+  private retryDeferredSummary;
   private tick;
   private generate;
 }
